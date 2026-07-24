@@ -1,13 +1,11 @@
-"""FastAPI dependency injection — provides database sessions and cache."""
+"""FastAPI dependency injection — provides database sessions."""
 
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.cache import GameCache, cache
-from app.core.config import settings
 from app.db.database import async_session_factory
 
 
@@ -24,19 +22,6 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-def get_cache() -> GameCache:
-    """Dependency: provide the cache singleton."""
-    return cache
-
-
 # ── Type aliases for convenience ─────────────────────────────
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
-CacheDep = Annotated[GameCache, Depends(get_cache)]
-
-
-def get_client_host(request: Request) -> str:
-    """Extract the client's host from the request."""
-    if forwarded := request.headers.get("X-Forwarded-For"):
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"

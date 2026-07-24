@@ -1,13 +1,10 @@
-"""Pipecat voice bot entrypoint for The Memory Host.
+"""Pipecat voice bot entrypoint for The Memory Host — Game Engine Service.
 
 Assembles the Pipecat pipeline:
-    SmallWebRTCTransport → Deepgram STT → MemoryGameProcessor → Deepgram TTS → Output
+    SmallWebRTCTransport -> Deepgram STT -> MemoryGameProcessor -> Deepgram TTS -> Output
 
 Uses Pipecat's built-in SmallWebRTCTransport with a WebSocket-based signaling
 server for SDP offer/answer exchange and ICE candidate negotiation.
-
-Usage:
-    python -m backend.app.services.bot --session-id <uuid> --room-url <url>
 
 Environment Variables:
     DEEPGRAM_API_KEY           Required for STT/TTS
@@ -74,21 +71,51 @@ class SignalingClient:
         self._peer_connected = asyncio.Event()
         self._ice_candidates: list[dict[str, Any]] = []
 
-    async def connect(self) -> None:
-        """Connect to the signaling server via WebSocket."""
+    async def connect(self, max_retries: int = 5) -> None:
+        """Connect to the signaling server via WebSocket.
+
+        Retries with exponential backoff (0.5s, 1s, 2s, 4s, ... up to ~8.5s max)
+        so the bot survives the signaling server starting a few seconds late.
+
+        Args:
+            max_retries: Maximum number of connection attempts.
+
+        Raises:
+            ConnectionRefusedError: If all retries are exhausted.
+        """
         import websockets
 
-        logger.info("Connecting to signaling server: %s", self.server_url)
-
-        # Map HTTP → WS for convenience
         ws_url = self.server_url.replace("http://", "ws://").replace(
             "https://", "wss://"
         )
         ws_url = f"{ws_url}/room/{self.room_name}"
 
-        self._ws = await websockets.connect(ws_url)
-        self._connected.set()
-        logger.info("Connected to signaling server")
+        last_error: Exception | None = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(
+                    "Connecting to signaling server (attempt %d/%d): %s",
+                    attempt, max_retries, self.server_url,
+                )
+                self._ws = await websockets.connect(ws_url)
+                self._connected.set()
+                logger.info("Connected to signaling server")
+                return
+            except (OSError, websockets.WebSocketException) as e:
+                last_error = e
+                if attempt < max_retries:
+                    delay = min(0.5 * (2 ** (attempt - 1)), 8.5)
+                    logger.warning(
+                        "Signaling server not ready (attempt %d/%d), "
+                        "retrying in %.1fs: %s",
+                        attempt, max_retries, delay, e,
+                    )
+                    await asyncio.sleep(delay)
+
+        raise ConnectionRefusedError(
+            f"Could not connect to signaling server at {self.server_url} "
+            f"after {max_retries} attempts. Last error: {last_error}"
+        )
 
     async def negotiate(self) -> None:
         """Handle the full SDP negotiation lifecycle.
@@ -224,12 +251,6 @@ async def create_and_run_bot(
     webrtc_connection = SmallWebRTCConnection(
         ice_servers=[
             IceServer(urls=["stun:stun.l.google.com:19302"]),
-            # For production, add TURN servers here:
-            # IceServer(
-            #     urls=["turn:your-turn-server.com:3478"],
-            #     username=os.getenv("TURN_USERNAME"),
-            #     credential=os.getenv("TURN_CREDENTIAL"),
-            # ),
         ]
     )
 
@@ -371,11 +392,6 @@ def main() -> None:
         help="WebSocket signaling server URL (default: from env or ws://localhost:3001)",
     )
     parser.add_argument(
-        "--token",
-        default="",
-        help="Room access token (reserved for future DailyTransport integration)",
-    )
-    parser.add_argument(
         "--player-name",
         default="Player",
         help="Player's display name",
@@ -406,7 +422,6 @@ def main() -> None:
             session_id=args.session_id,
             player_name=args.player_name,
             room_url=args.room_url,
-
             max_rounds=args.max_rounds,
         )
     )

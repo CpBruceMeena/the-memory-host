@@ -16,9 +16,6 @@ Protocol:
   6. Bot sends {"type": "answer", "sdp": ...}
   7. Signaling relays answer to client
   8. ICE candidates are relayed bidirectionally
-
-Usage:
-    python -m backend.signaling_server
 """
 
 from __future__ import annotations
@@ -27,7 +24,6 @@ import argparse
 import asyncio
 import json
 import logging
-import sys
 from typing import Any
 
 import websockets
@@ -114,7 +110,6 @@ async def handle_connection(
     """Handle a single WebSocket connection lifecycle."""
 
     # Extract room name from path: /room/<room_name>
-    # websockets 13+ uses ws.path, older versions use ws.request.path
     path = getattr(ws, "path", None)
     if path is None:
         path = getattr(getattr(ws, "request", None), "path", "/")
@@ -194,8 +189,6 @@ async def handle_connection(
             if other:
                 await safe_send(other, {"type": "peer_disconnected"})
 
-            # After removing, check if the remaining peer is the bot
-            # and reset their state for a new connection
             room.remove_if_empty(room_name)
 
 

@@ -1,11 +1,8 @@
 """In-memory cache layer using TTLCache.
 
-Replaces Redis for simplicity — no external infrastructure needed.
-Used for:
-- Active session data (30 min TTL)
-- Round state (30 min TTL)
-- Leaderboard (60 second TTL)
-- Session lookup by room name
+Each service (rest-api, game-engine) has its own local in-memory cache.
+This is the game engine's cache — used internally for session state.
+The game engine writes results directly to the database (source of truth).
 """
 
 from __future__ import annotations
@@ -39,7 +36,7 @@ class GameCache:
             ttl=settings.CACHE_LEADERBOARD_TTL,
         )
 
-        # Room name → session ID lookup (30 min TTL, max 100)
+        # Room name -> session ID lookup (30 min TTL, max 100)
         self._room_to_session: TTLCache[str, str] = TTLCache(
             maxsize=100,
             ttl=settings.CACHE_ACTIVE_SESSION_TTL,
@@ -63,7 +60,7 @@ class GameCache:
         """Check if a session is in the active cache."""
         return session_id in self._active_sessions
 
-    # ── Room → Session Mapping ───────────────────────────────────
+    # ── Room -> Session Mapping ───────────────────────────────────
 
     def set_room_session(self, room_name: str, session_id: str) -> None:
         """Map a room name to its session ID."""
@@ -100,11 +97,7 @@ class GameCache:
         return "leaderboard" not in self._leaderboard_cache
 
     def invalidate_leaderboard(self) -> None:
-        """Force leaderboard cache invalidation.
-
-        Call this after a round is scored to ensure the leaderboard
-        reflects the latest data on next fetch.
-        """
+        """Force leaderboard cache invalidation."""
         self._leaderboard_cache.pop("leaderboard", None)
 
 

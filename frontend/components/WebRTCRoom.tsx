@@ -55,6 +55,12 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
           }
         };
 
+        // Must add a recvonly audio transceiver so the SDP offer includes
+        // an m=audio section. Without it, createOffer() generates a malformed
+        // offer → bot's answer has an empty BUNDLE group MID →
+        // setRemoteDescription fails and no audio flows.
+        pc.addTransceiver("audio", { direction: "recvonly" });
+
         // Log ICE connection state changes
         pc.oniceconnectionstatechange = () => {
           if (cancelled) return;
@@ -168,8 +174,8 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
           if (event.code === 1006) {
             setStatus("error");
             setErrorMsg(
-              "Could not reach the signaling server. " +
-              "Make sure it's running: ./run.sh signaling"
+              "Could not connect to the voice room. " +
+              "Make sure the backend server is running on port 8000"
             );
           } else {
             setStatus("disconnected");

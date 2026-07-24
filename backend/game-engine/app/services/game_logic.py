@@ -19,7 +19,7 @@ def generate_sequence(
     """Generate a unique word sequence for the given round.
 
     The number of words = round_number + 2.
-    E.g. Round 1 → 3 words, Round 2 → 4 words, Round 10 → 12 words.
+    E.g. Round 1 -> 3 words, Round 2 -> 4 words, Round 10 -> 12 words.
 
     Args:
         round_number: Current round (1-indexed).

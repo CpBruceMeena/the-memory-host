@@ -1,0 +1,37 @@
+"""Application constants for The Memory Host — REST API Service.
+
+Central location for constant values used across the application.
+"""
+
+# ═══════════════════════════════════════════════════════════
+# Word Pool — memory game sequences
+# ═══════════════════════════════════════════════════════════
+# 100+ common words across categories (animals, fruits, objects, colors, nature, etc.).
+# Used by the game logic to generate unique word sequences per round.
+
+WORD_POOL: list[str] = [
+    # Animals
+    "eagle", "jaguar", "tiger", "zebra", "koala", "dolphin", "elephant",
+    "kangaroo", "dragon", "butterfly", "firefly", "falcon", "panther",
+    "raven", "coyote", "osprey", "beaver", "otter", "badger", "cougar",
+    # Fruits & Food
+    "apple", "banana", "cherry", "lemon", "orange", "pepper", "ginger",
+    "olive", "pancake", "chocolate", "nectar", "honey", "mango", "peach",
+    "plum", "grape", "melon", "walnut", "basil", "sage",
+    # Nature
+    "forest", "garden", "harbor", "island", "mountain", "river", "sunset",
+    "ocean", "iceberg", "thunder", "rainbow", "winter", "autumn", "horizon",
+    "meadow", "canyon", "glacier", "volcano", "desert", "tundra",
+    # Objects & Places
+    "castle", "lantern", "marble", "rocket", "piano", "violin", "guitar",
+    "jewel", "diamond", "amber", "sapphire", "quartz", "knight", "umbrella",
+    "feather", "copper", "violet", "nebula", "crystal", "mirror",
+    # Abstract & Colors
+    "night", "whisper", "melody", "yellow", "silver", "velvet", "crimson",
+    "emerald", "golden", "shadow", "spirit", "summer", "spring", "dream",
+    "echo", "bloom", "dawn", "frost", "breeze", "storm",
+]
+
+# Ensure no duplicates
+assert len(WORD_POOL) == len(set(WORD_POOL)), "Word pool contains duplicates!"
+assert len(WORD_POOL) >= 100, f"Word pool has {len(WORD_POOL)} words, need at least 100"

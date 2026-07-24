@@ -1,17 +1,19 @@
-"""FastAPI API routes — session management, leaderboard, health."""
+"""FastAPI API routes — session management, leaderboard, health.
+
+Communicates with the game-engine service to start voice bot sessions.
+"""
 
 import asyncio
 import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, HTTPException, status
-
-logger = logging.getLogger(__name__)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CacheDep, DbSession
+from app.api.deps import DbSession
 from app.api.schemas import (
     CreateSessionRequest,
     CreateSessionResponse,
@@ -22,9 +24,11 @@ from app.api.schemas import (
     LeaderboardResponse,
     SessionResponse,
 )
-from app.core.cache import GameCache
+from app.core.config import settings
 from app.models.round import Round
 from app.models.session import Session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -58,12 +62,11 @@ async def health_check():
 async def create_session(
     body: CreateSessionRequest,
     db: DbSession,
-    cache: CacheDep,
 ):
     """Create a new game session.
 
-    Creates a database record and caches the session data.
-    SmallWebRTC room creation will be integrated here.
+    Creates a database record, notifies the game-engine service
+    to start the voice bot, and returns session info to the frontend.
     """
     # Check if player has an active session already
     existing = await db.execute(
@@ -78,13 +81,16 @@ async def create_session(
             detail=f"Player '{body.player_name}' already has an active session",
         )
 
-    # Create session in database without room yet (need session_id first)
+    # Create session with placeholder room info (will update after
+    # we have the session_id for consistent room naming with bot.py)
     db_session = Session(
         player_name=body.player_name,
         status="active",
         score=0,
         current_round=0,
         max_rounds=10,
+        room_url="",
+        room_name="",
     )
     db.add(db_session)
     await db.flush()
@@ -94,42 +100,43 @@ async def create_session(
     room_name = f"memory-game-{str(db_session.id)[:8]}"
     room_url = f"http://localhost:3001/room/{room_name}"
 
-    # Update session with room info
+    # Update session with real room info
     db_session.room_url = room_url
     db_session.room_name = room_name
     await db.flush()
 
-    # Cache session data
-    session_data = {
-        "session_id": str(db_session.id),
-        "player_name": db_session.player_name,
-        "status": db_session.status,
-        "score": db_session.score,
-        "current_round": db_session.current_round,
-        "max_rounds": db_session.max_rounds,
-        "room_url": db_session.room_url,
-        "room_name": db_session.room_name,
-    }
-    cache.set_session(str(db_session.id), session_data)
-    cache.set_room_session(room_name, str(db_session.id))
-
-    # Auto-launch the Pipecat bot in the background for this session
-    from app.services.bot import create_and_run_bot
-
-    async def _run_bot_safe() -> None:
-        """Wrapper to catch and log any top-level exceptions from the bot."""
+    # Notify the game-engine service to start the voice bot
+    async def _notify_game_engine() -> None:
+        """Send start-session request to the game-engine service."""
         try:
-            await create_and_run_bot(
-                session_id=str(db_session.id),
-                player_name=body.player_name,
-            )
-        except Exception:
-            logger.exception(
-                "Bot failed for session %s", db_session.id
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{settings.GAME_ENGINE_URL}/start-session",
+                    json={
+                        "session_id": str(db_session.id),
+                        "player_name": body.player_name,
+                    },
+                    timeout=5.0,
+                )
+                if resp.status_code == 200:
+                    logger.info(
+                        "Game engine started for session %s", db_session.id
+                    )
+                else:
+                    logger.warning(
+                        "Game engine returned %d for session %s: %s",
+                        resp.status_code,
+                        db_session.id,
+                        resp.text,
+                    )
+        except httpx.RequestError as e:
+            logger.error(
+                "Failed to notify game-engine for session %s: %s",
+                db_session.id,
+                e,
             )
 
-    asyncio.create_task(_run_bot_safe())
-    logger.info("Bot auto-launched for session %s", db_session.id)
+    asyncio.create_task(_notify_game_engine())
 
     return CreateSessionResponse(
         session_id=str(db_session.id),
@@ -152,30 +159,12 @@ async def create_session(
 async def get_session(
     session_id: UUID,
     db: DbSession,
-    cache: CacheDep,
 ):
     """Get the current state of a game session.
 
-    Reads from cache first (fast), falls back to database.
+    Always reads from database (no cache) to ensure fresh data
+    when the game-engine updates scores between frontend polls.
     """
-    sid = str(session_id)
-
-    # Try cache first
-    cached = cache.get_session(sid)
-    if cached:
-        return SessionResponse(
-            session_id=cached["session_id"],
-            player_name=cached["player_name"],
-            status=cached["status"],
-            score=cached["score"],
-            current_round=cached["current_round"],
-            total_rounds=cached["max_rounds"],
-            created_at=datetime.fromisoformat(
-                cached.get("created_at", datetime.now(timezone.utc).isoformat())
-            ),
-        )
-
-    # Fallback to database
     result = await db.execute(
         select(Session).where(Session.id == session_id)
     )
@@ -186,16 +175,6 @@ async def get_session(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Session '{session_id}' not found",
         )
-
-    # Update cache
-    session_data = {
-        "session_id": str(db_session.id),
-        "player_name": db_session.player_name,
-        "status": db_session.status,
-        "score": db_session.score,
-        "current_round": db_session.current_round,
-    }
-    cache.set_session(sid, session_data)
 
     return SessionResponse(
         session_id=str(db_session.id),
@@ -221,7 +200,6 @@ async def end_session(
     session_id: UUID,
     body: EndSessionRequest,
     db: DbSession,
-    cache: CacheDep,
 ):
     """End an active session (manually or on game over)."""
     result = await db.execute(
@@ -246,9 +224,6 @@ async def end_session(
     await db.flush()
     await db.refresh(db_session)
 
-    # Remove from cache
-    cache.remove_session(str(session_id))
-
     return SessionResponse(
         session_id=str(db_session.id),
         player_name=db_session.player_name,
@@ -270,19 +245,12 @@ async def end_session(
 )
 async def get_leaderboard(
     db: DbSession,
-    cache: CacheDep,
 ):
     """Get the top scores leaderboard.
 
-    Served from cache if fresh (< 60s), otherwise queries the database.
+    Queries database directly (no cache) for fresh results.
     """
-    # Try cache first
-    if not cache.is_leaderboard_stale():
-        cached = cache.get_leaderboard()
-        if cached is not None:
-            return LeaderboardResponse(leaderboard=cached)
-
-    # Query from database using the leaderboard view
+    # Query from database
     result = await db.execute(
         select(Session).where(
             Session.status == "completed"
@@ -315,8 +283,5 @@ async def get_leaderboard(
         player_scores.values(),
         key=lambda x: (-x["best_score"], -x["best_round"]),
     )[:20]
-
-    # Cache the result
-    cache.set_leaderboard(leaderboard_data)
 
     return LeaderboardResponse(leaderboard=leaderboard_data)

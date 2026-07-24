@@ -15,9 +15,9 @@ class GameState(str, Enum):
     """Enum of all possible game states.
 
     Transitions:
-        IDLE → START_GAME → SPEAK_SEQUENCE → LISTEN → VALIDATE
-            → ROUND_PASS → SPEAK_SEQUENCE (loop)
-            → GAME_OVER → ENDED
+        IDLE -> START_GAME -> SPEAK_SEQUENCE -> LISTEN -> VALIDATE
+            -> ROUND_PASS -> SPEAK_SEQUENCE (loop)
+            -> GAME_OVER -> ENDED
     """
 
     IDLE = "idle"

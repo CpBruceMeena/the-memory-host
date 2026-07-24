@@ -1,8 +1,8 @@
 """MemoryGameProcessor — custom Pipecat FrameProcessor for the memory game.
 
 This is the central orchestrator of the game:
-- Manages game state transitions (IDLE → START_GAME → SPEAK_SEQUENCE → LISTEN →
-  VALIDATE → ROUND_PASS / GAME_OVER → ENDED)
+- Manages game state transitions (IDLE -> START_GAME -> SPEAK_SEQUENCE -> LISTEN ->
+  VALIDATE -> ROUND_PASS / GAME_OVER -> ENDED)
 - Intercepts user transcript frames and validates game responses
 - Selects random prompt templates for bot speech
 - Generates word sequences per round
@@ -39,8 +39,6 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.core.cache import GameCache
-    from app.models.round import Round
-    from app.models.session import Session
     from app.services.prompt_templates import PromptTemplateSelector
 
 logger = logging.getLogger(__name__)
@@ -50,7 +48,7 @@ class MemoryGameProcessor(FrameProcessor):
     """Custom Pipecat FrameProcessor that implements the memory game engine.
 
     This processor sits between STT and TTS in the Pipecat pipeline:
-        STT → MemoryGameProcessor → TTS
+        STT -> MemoryGameProcessor -> TTS
 
     It intercepts frames to:
     1. Control game state transitions
@@ -423,7 +421,7 @@ class MemoryGameProcessor(FrameProcessor):
     async def _say(self, text: str) -> None:
         """Push a TextFrame with the bot's speech into the pipeline.
 
-        The TextFrame flows downstream to TTS → audio output.
+        The TextFrame flows downstream to TTS -> audio output.
         """
         await self.push_frame(TextFrame(text))
 
@@ -498,6 +496,7 @@ class MemoryGameProcessor(FrameProcessor):
             ),
             "score": self.game.score,
             "current_round": self.game.current_round,
+            "max_rounds": self.game.max_rounds,
         }
         self.cache.set_session(str(self.game.session_id), session_data)
 

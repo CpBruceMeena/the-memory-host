@@ -1,0 +1,27 @@
+# The Memory Host — Game Engine Service Dependencies
+
+# Voice Pipeline
+pipecat-ai[webrtc,deepgram]>=1.0.0
+
+# WebRTC & WebSockets
+websockets>=13.0
+
+# HTTP (for the start-session endpoint)
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic>=2.10.6
+pydantic-settings==2.5.2
+
+# Database (shared with rest-api service)
+sqlalchemy[asyncio]>=2.0.35
+asyncpg==0.30.0
+
+# Cache (local in-memory)
+cachetools==5.5.0
+
+# Testing
+pytest==8.3.3
+pytest-asyncio==0.24.0
+
+# Utilities
+loguru>=0.7.3

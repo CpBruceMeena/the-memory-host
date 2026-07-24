@@ -6,4 +6,5 @@ dependencies = [
     "fastapi>=0.139.2",
     "pipecat>=0.3.0",
     "sqlalchemy>=2.0.51",
+    "websockets>=16.1.1",
 ]
