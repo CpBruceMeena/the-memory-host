@@ -1,0 +1,27 @@
+.code-review-graph/
+.code_review_graph/
+code-review-graph-cache/
+crg-cache/
+.cache/code-review-graph/
+.cache/crg/
+*.crg
+
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+
+# Node
+node_modules/
+.next/
