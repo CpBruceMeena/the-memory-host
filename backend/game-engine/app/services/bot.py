@@ -24,6 +24,7 @@ import uuid
 from typing import Any, Optional
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineTask
@@ -271,7 +272,14 @@ async def create_and_run_bot(
             audio_in_enabled=True,
             audio_out_enabled=True,
             vad_enabled=True,
-            vad_analyzer=SileroVADAnalyzer(),
+            vad_analyzer=SileroVADAnalyzer(
+                params=VADParams(
+                    confidence=0.5,   # Lower threshold → catches quieter speech
+                    start_secs=0.3,   # Slightly longer start to avoid clipping
+                    stop_secs=0.5,    # Longer stop to avoid cutting off mid-sentence
+                    min_volume=0.3,   # Lower volume threshold → catches softer voices
+                ),
+            ),
             vad_audio_passthrough=True,
         ),
     )
@@ -284,9 +292,11 @@ async def create_and_run_bot(
     )
 
     # ── TTS Service ─────────────────────────────────────────────
+    # Use aura-luna-en (slower, softer) instead of aura-asteria-en
+    # (energetic, fast) so the bot's speech is easier to follow.
     tts = DeepgramTTSService(
         api_key=api_key,
-        voice="aura-asteria-en",  # Friendly, energetic female voice
+        voice="aura-luna-en",  # Soft, slower voice — easier to follow
         sample_rate=16000,
     )
 

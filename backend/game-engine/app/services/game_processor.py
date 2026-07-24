@@ -13,6 +13,7 @@ This is the central orchestrator of the game:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -207,9 +208,7 @@ class MemoryGameProcessor(FrameProcessor):
             # User finished speaking after interruption
             self._interrupted = False
 
-    # ── Transcript Processing ──────────────────────────────────
-
-    async def _on_transcript(self, frame: TranscriptionFrame) -> None:
+    # ── Transcript Processing ──────────────────────────────────        async def _on_transcript(self, frame: TranscriptionFrame) -> None:
         """Collect transcribed words from user speech.
 
         Accumulates transcript text fragments while in LISTEN state.
@@ -217,10 +216,17 @@ class MemoryGameProcessor(FrameProcessor):
         """
         if self.game.state == GameState.LISTEN:
             self.game.user_transcript_buffer.append(frame.text)
-            logger.debug(
+            # Log at INFO level so we can see transcripts in the app log
+            logger.info(
                 "Transcript collected: '%s' (buffer size: %d)",
                 frame.text,
                 len(self.game.user_transcript_buffer),
+            )
+        else:
+            logger.warning(
+                "Transcript received but not in LISTEN state (state=%s): '%s'",
+                self.game.state.value if self.game.state else "None",
+                frame.text,
             )
 
     # ── Validation (Core Game Logic) ───────────────────────────
@@ -326,19 +332,24 @@ class MemoryGameProcessor(FrameProcessor):
             self.game.expected_sequence,
         )
 
-        # Select random success prompt
-        sequence_str = ", ".join(self.game.expected_sequence)
+        # Announce the next round with 1-second pauses between each word
         prompt = self.prompt_selector.get(
             "success",
             default=(
                 "Correct! Moving to round {round_number}. "
-                "Score: {score}. Your words: {sequence}."
+                "Score: {score}."
             ),
             round_number=self.game.current_round,
             score=self.game.score,
-            sequence=sequence_str,
         )
         await self._say(prompt)
+
+        # Say each new word with a 1-second pause between them
+        for word in self.game.expected_sequence:
+            await asyncio.sleep(1.0)
+            await self._say(word)
+
+        await self._say("Now repeat those words back.")
 
         # Bot has finished speaking the next sequence — listen for user
         self.game.state = GameState.LISTEN
@@ -361,7 +372,7 @@ class MemoryGameProcessor(FrameProcessor):
             self.game.current_round,
         )
 
-        # Select random failure prompt
+        # Select random failure prompt with period-separated words
         prompt = self.prompt_selector.get(
             "failure",
             default=(
@@ -369,7 +380,7 @@ class MemoryGameProcessor(FrameProcessor):
                 "The sequence was: {correct_sequence}. "
                 "Final score: {score}."
             ),
-            correct_sequence=", ".join(expected),
+            correct_sequence=". ".join(expected),
             user_said=", ".join(user_words),
             score=self.game.score,
             round_number=self.game.current_round,
@@ -408,15 +419,30 @@ class MemoryGameProcessor(FrameProcessor):
     # ── Helper Methods ─────────────────────────────────────────
 
     async def _announce_round(self) -> None:
-        """Announce the current round and word sequence to the user."""
-        sequence_str = ", ".join(self.game.expected_sequence)
+        """Announce the current round and word sequence to the user.
+
+        Each word is sent as a separate TextFrame with a 1-second pause
+        between them. This is the most reliable way to control TTS pacing
+        since punctuation-based pauses vary between TTS engines.
+        """
+        # First announce the round number
         prompt = self.prompt_selector.get(
             "round_intro",
-            default="Round {round_number}: {sequence}. Repeat that back.",
+            default="Round {round_number}. Listen carefully.",
             round_number=self.game.current_round,
-            sequence=sequence_str,
+            sequence="",
         )
         await self._say(prompt)
+
+        # Then say each word individually with a 1-second pause between
+        # them for a clear, slow delivery. The user requested a full
+        # second of silence between each word.
+        for word in self.game.expected_sequence:
+            await asyncio.sleep(1.0)
+            await self._say(word)
+
+        # Finally, prompt the user to repeat
+        await self._say("Now repeat those words back.")
 
     async def _say(self, text: str) -> None:
         """Push a TextFrame with the bot's speech into the pipeline.

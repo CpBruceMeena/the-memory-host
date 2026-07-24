@@ -27,6 +27,11 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REST_API_DIR="$ROOT_DIR/backend/rest-api"
 GAME_ENGINE_DIR="$ROOT_DIR/backend/game-engine"
 FRONTEND_DIR="$ROOT_DIR/frontend"
+LOG_FILE="$ROOT_DIR/app.log"
+
+# Clear the log file on each run so we start fresh
+: > "$LOG_FILE"
+echo "[INFO] Cleared log file: $LOG_FILE"
 
 # Colors for output
 RED='\033[0;31m'

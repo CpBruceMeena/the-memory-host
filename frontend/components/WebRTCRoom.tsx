@@ -55,11 +55,25 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
           }
         };
 
-        // Must add a recvonly audio transceiver so the SDP offer includes
-        // an m=audio section. Without it, createOffer() generates a malformed
-        // offer → bot's answer has an empty BUNDLE group MID →
-        // setRemoteDescription fails and no audio flows.
-        pc.addTransceiver("audio", { direction: "recvonly" });
+        // First, create an explicit sendrecv transceiver so the SDP offer
+        // signals that we want to both SEND audio (user → bot for STT) and
+        // RECEIVE audio (bot → user for TTS). Without this explicit direction,
+        // the offer defaults to sendonly and the bot won't send audio back.
+        pc.addTransceiver("audio", { direction: "sendrecv" });
+
+        // Capture the user's microphone and add the track to the existing
+        // transceiver. addTrack() on a connection with an existing audio
+        // transceiver reuses that transceiver (does NOT create a new one).
+        const userStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        for (const track of userStream.getAudioTracks()) {
+          pc.addTrack(track, userStream);
+        }
 
         // Log ICE connection state changes
         pc.oniceconnectionstatechange = () => {

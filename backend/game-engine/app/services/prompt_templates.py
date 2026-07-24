@@ -33,65 +33,65 @@ class PromptTemplateSelector:
         self.templates: dict[str, list[str]] = {
             # ── Start / Welcome ────────────────────────────────────
             "start": [
-                "Welcome to the Memory Host, {player_name}! I'm going to say a "
+                "Welcome to the Memory Host, {player_name}. I'm going to say a "
                 "sequence of words. Your job is to repeat them back to me exactly "
-                "as I said them. Ready? Let's begin!",
-                "Hey there, {player_name}! Welcome to the memory challenge! "
+                "as I said them. Ready? Let's begin.",
+                "Hey there, {player_name}. Welcome to the memory challenge. "
                 "Listen carefully to each word I say, and then repeat them back "
-                "to me in the same order. Let's see how far you can go!",
-                "Hello, {player_name}, and welcome to The Memory Host! "
-                "I'll speak a sequence of words — your task is to remember them "
+                "to me in the same order. Let's see how far you can go.",
+                "Hello, {player_name}, and welcome to The Memory Host. "
+                "I'll speak a sequence of words. Your task is to remember them "
                 "and repeat them back. The sequences get longer each round. "
-                "Good luck!",
+                "Good luck.",
             ],
             # ── Round Introduction ─────────────────────────────────
             "round_intro": [
-                "Round {round_number}. Here are your words: {sequence}. "
+                "Round {round_number}. Here are your words. {sequence}. "
                 "Now it's your turn to repeat them back to me.",
-                "Okay, round {round_number}! Listen closely: {sequence}. "
+                "Okay, round {round_number}. Listen closely. {sequence}. "
                 "Go ahead and repeat that back.",
-                "Here comes round {round_number}: {sequence}. "
+                "Here comes round {round_number}. {sequence}. "
                 "Take your time and say them back when you're ready.",
-                "Round {round_number}: {sequence}. "
+                "Round {round_number}. {sequence}. "
                 "Repeat those back to me whenever you're ready.",
             ],
             # ── Success / Round Pass ────────────────────────────────
             "success": [
-                "That's correct! You've got a great memory. Let's move to round "
+                "That's correct. You've got a great memory. Let's move to round "
                 "{round_number}. Your score is now {score}. "
-                "Here's your next sequence: {sequence}.",
-                "Perfect! You nailed it. On to round {round_number}! "
-                "Score: {score}. Listen up: {sequence}.",
-                "Absolutely right! You're on fire. Round {round_number} coming up. "
-                "Score: {score}. Your words are: {sequence}.",
-                "Correct! Excellent memory. Let's see how you do in round "
+                "Here's your next sequence. {sequence}.",
+                "Perfect. You nailed it. On to round {round_number}. "
+                "Score: {score}. Listen up. {sequence}.",
+                "Absolutely right. You're on fire. Round {round_number} coming up. "
+                "Score: {score}. Your words are. {sequence}.",
+                "Correct. Excellent memory. Let's see how you do in round "
                 "{round_number}. Current score: {score}. "
-                "Here's your new sequence: {sequence}.",
+                "Here's your new sequence. {sequence}.",
             ],
             # ── Failure / Wrong Answer ─────────────────────────────
             "failure": [
-                "Oh, that's not quite right. The correct sequence was: "
-                "{correct_sequence}. You said: {user_said}. "
-                "Your final score is {score}. Thanks for playing The Memory Host!",
-                "Almost! The right answer was: {correct_sequence}. "
-                "You said: {user_said}. Game over! Final score: {score}. "
-                "Great effort!",
-                "Sorry, that wasn't correct. I was looking for: {correct_sequence}. "
-                "You replied with: {user_said}. "
-                "Game over! You scored {score} points. Well played!",
-                "Not quite! The sequence was: {correct_sequence}. "
-                "You said: {user_said}. Final score: {score}. "
-                "Better luck next time!",
+                "Oh, that's not quite right. The correct sequence was. "
+                "{correct_sequence}. You said. {user_said}. "
+                "Your final score is {score}. Thanks for playing The Memory Host.",
+                "Almost. The right answer was. {correct_sequence}. "
+                "You said. {user_said}. Game over. Final score: {score}. "
+                "Great effort.",
+                "Sorry, that wasn't correct. I was looking for. {correct_sequence}. "
+                "You replied with. {user_said}. "
+                "Game over. You scored {score} points. Well played.",
+                "Not quite. The sequence was. {correct_sequence}. "
+                "You said. {user_said}. Final score: {score}. "
+                "Better luck next time.",
             ],
             # ── Game Over / Win ────────────────────────────────────
             "game_over": [
-                "That's the game! You've completed all rounds. "
-                "Your final score is {score}. You're a memory master! "
-                "Congratulations, {player_name}!",
-                "Incredible! You made it through all the rounds! "
-                "Final score: {score}. That's amazing! Thanks for playing!",
-                "You did it! Every round completed with a perfect score of {score}! "
-                "You are the ultimate Memory Host champion, {player_name}!",
+                "That's the game. You've completed all rounds. "
+                "Your final score is {score}. You're a memory master. "
+                "Congratulations, {player_name}.",
+                "Incredible. You made it through all the rounds. "
+                "Final score: {score}. That's amazing. Thanks for playing.",
+                "You did it. Every round completed with a perfect score of {score}. "
+                "You are the ultimate Memory Host champion, {player_name}.",
             ],
             # ── Interruption Recovery ──────────────────────────────
             "interrupt": [

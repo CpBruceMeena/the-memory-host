@@ -189,7 +189,7 @@ async def handle_connection(
             if other:
                 await safe_send(other, {"type": "peer_disconnected"})
 
-            room.remove_if_empty(room_name)
+            rooms.remove_if_empty(room_name)
 
 
 async def safe_send(

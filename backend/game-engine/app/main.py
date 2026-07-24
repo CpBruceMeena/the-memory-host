@@ -10,8 +10,10 @@ and runs the Pipecat voice bot for each session.
 
 import asyncio
 import logging
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import websockets
 from fastapi import FastAPI, Request
@@ -21,7 +23,28 @@ from app.core.config import settings
 from app.services.bot import create_and_run_bot
 from app.signaling.server import handle_connection
 
+# ── Logging: stdout + single file at project root ────────────────────────
+LOG_FILE = Path(__file__).resolve().parent.parent.parent.parent / "app.log"
+
+_formatter = logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+_stdout_handler = logging.StreamHandler(sys.stdout)
+_stdout_handler.setFormatter(_formatter)
+
+_file_handler = logging.FileHandler(str(LOG_FILE), mode="a", encoding="utf-8")
+_file_handler.setFormatter(_formatter)
+
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[_stdout_handler, _file_handler],
+    force=True,
+)
+
 logger = logging.getLogger("game-engine")
+logger.info("Logging to %s", LOG_FILE)
 
 # ── Startup diagnostics (print, not logger.info — runs before logging handlers are set up) ───
 _dg_status = "✅ LOADED" if settings.DEEPGRAM_API_KEY else "❌ MISSING (set DEEPGRAM_API_KEY in .env)"
@@ -52,8 +75,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # ── Start WebSocket signaling server on port 3001 ───────────
     try:
+        # Suppress noisy ERROR logs from the websockets library when
+        # non-WebSocket HTTP requests hit the signaling port (e.g.
+        # browser probes, extension pings, or dev tools). These are
+        # harmless but clutter the app log with tracebacks.
+        logging.getLogger("websockets.server").setLevel(logging.WARNING)
+
         signaling_server = await websockets.serve(
-            handle_connection, SIGNALING_HOST, SIGNALING_PORT
+            handle_connection, SIGNALING_HOST, SIGNALING_PORT,
         )
         logger.info(
             "Signaling server started on ws://%s:%d",
