@@ -1,9 +1,13 @@
 """FastAPI API routes — session management, leaderboard, health."""
 
+import asyncio
+import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -74,23 +78,26 @@ async def create_session(
             detail=f"Player '{body.player_name}' already has an active session",
         )
 
-    # Create a placeholder room URL (SmallWebRTC integration in Phase 3)
-    room_name = f"memory-game-{datetime.now(timezone.utc).timestamp():.0f}"
-    room_url = f"http://localhost:3001/room/{room_name}"
-
-    # Create session in database
+    # Create session in database without room yet (need session_id first)
     db_session = Session(
         player_name=body.player_name,
         status="active",
         score=0,
         current_round=0,
         max_rounds=10,
-        room_url=room_url,
-        room_name=room_name,
     )
     db.add(db_session)
     await db.flush()
     await db.refresh(db_session)
+
+    # Now we have the session_id — use it for room naming (matching bot.py)
+    room_name = f"memory-game-{str(db_session.id)[:8]}"
+    room_url = f"http://localhost:3001/room/{room_name}"
+
+    # Update session with room info
+    db_session.room_url = room_url
+    db_session.room_name = room_name
+    await db.flush()
 
     # Cache session data
     session_data = {
@@ -106,11 +113,29 @@ async def create_session(
     cache.set_session(str(db_session.id), session_data)
     cache.set_room_session(room_name, str(db_session.id))
 
+    # Auto-launch the Pipecat bot in the background for this session
+    from app.services.bot import create_and_run_bot
+
+    async def _run_bot_safe() -> None:
+        """Wrapper to catch and log any top-level exceptions from the bot."""
+        try:
+            await create_and_run_bot(
+                session_id=str(db_session.id),
+                player_name=body.player_name,
+            )
+        except Exception:
+            logger.exception(
+                "Bot failed for session %s", db_session.id
+            )
+
+    asyncio.create_task(_run_bot_safe())
+    logger.info("Bot auto-launched for session %s", db_session.id)
+
     return CreateSessionResponse(
         session_id=str(db_session.id),
         player_name=db_session.player_name,
         room_url=room_url,
-        room_token="placeholder-token",  # Real token from SmallWebRTC in Phase 3
+        room_token="placeholder-token",
         status="active",
         created_at=db_session.created_at,
     )

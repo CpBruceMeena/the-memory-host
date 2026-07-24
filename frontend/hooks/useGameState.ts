@@ -45,11 +45,22 @@ export function useGameState(
       });
 
       if (!res.ok) {
+        // Try to extract the backend's error detail from the response body
+        let detail = `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          if (body?.detail) {
+            detail = body.detail;
+          }
+        } catch {
+          // Response body isn't JSON — use the fallback message
+        }
+
         if (res.status === 404) {
           setError("Session not found");
           return;
         }
-        throw new Error(`HTTP ${res.status}`);
+        throw new Error(detail);
       }
 
       const data: SessionResponse = await res.json();

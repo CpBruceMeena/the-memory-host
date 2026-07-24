@@ -21,7 +21,7 @@ from pipecat.frames.frames import (
     Frame,
     StartFrame,
     TextFrame,
-    TranscriptFrame,
+    TranscriptionFrame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame,
 )
@@ -107,7 +107,7 @@ class MemoryGameProcessor(FrameProcessor):
         elif isinstance(frame, UserStoppedSpeakingFrame):
             await self._on_user_stopped_speaking()
 
-        elif isinstance(frame, TranscriptFrame):
+        elif isinstance(frame, TranscriptionFrame):
             await self._on_transcript(frame)
 
         # Always forward the frame to maintain pipeline flow
@@ -211,7 +211,7 @@ class MemoryGameProcessor(FrameProcessor):
 
     # ── Transcript Processing ──────────────────────────────────
 
-    async def _on_transcript(self, frame: TranscriptFrame) -> None:
+    async def _on_transcript(self, frame: TranscriptionFrame) -> None:
         """Collect transcribed words from user speech.
 
         Accumulates transcript text fragments while in LISTEN state.

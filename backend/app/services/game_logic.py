@@ -9,7 +9,7 @@ Handles:
 import random
 from typing import Optional
 
-from app.word_pool import WORD_POOL
+from app.core.constants import WORD_POOL
 
 
 def generate_sequence(

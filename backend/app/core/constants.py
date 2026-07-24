@@ -1,8 +1,13 @@
-"""Word pool for memory game sequences.
+"""Application constants for The Memory Host.
 
-100+ common words across categories (animals, fruits, objects, colors, nature, etc.).
-Used by the game logic to generate unique word sequences per round.
+Central location for constant values used across the application.
 """
+
+# ═══════════════════════════════════════════════════════════
+# Word Pool — memory game sequences
+# ═══════════════════════════════════════════════════════════
+# 100+ common words across categories (animals, fruits, objects, colors, nature, etc.).
+# Used by the game logic to generate unique word sequences per round.
 
 WORD_POOL: list[str] = [
     # Animals

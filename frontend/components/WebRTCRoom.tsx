@@ -70,6 +70,33 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
+        // Timeout: if no signaling message arrives within 15 seconds
+        // after the WebSocket opens, the bot probably never joined.
+        let signalingTimeout: ReturnType<typeof setTimeout> | null = null;
+
+        const startSignalingTimeout = () => {
+          signalingTimeout = setTimeout(() => {
+            if (cancelled) return;
+            setStatus("error");
+            setErrorMsg(
+              "The game bot didn't join the voice room. " +
+              "Check that the backend server is running " +
+              "and DEEPGRAM_API_KEY is set in .env"
+            );
+            // Don't close ws/pc here — the cleanup return function
+            // handles disconnection when the component unmounts.
+            // Closing here would trigger onclose/oniceconnectionstatechange
+            // which would override the "error" state we just set.
+          }, 15_000);
+        };
+
+        const clearSignalingTimeout = () => {
+          if (signalingTimeout !== null) {
+            clearTimeout(signalingTimeout);
+            signalingTimeout = null;
+          }
+        };
+
         ws.onopen = () => {
           if (cancelled) return;
 
@@ -81,28 +108,43 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
               kind: "receiver",
             })
           );
+
+          // Start the timeout — bot should respond within 15s
+          startSignalingTimeout();
         };
 
         ws.onmessage = async (event) => {
           if (cancelled) return;
 
+          // Any message from signaling means the bot is alive
+          clearSignalingTimeout();
+
           try {
             const msg = JSON.parse(event.data);
 
-            if (msg.type === "offer" && pc) {
-              await pc.setRemoteDescription(
-                new RTCSessionDescription(msg.sdp)
-              );
-
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
+            if (msg.type === "create_offer" && pc) {
+              // Signaling server tells us (the client) to create an SDP offer
+              console.log("Creating SDP offer...");
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
 
               ws.send(
                 JSON.stringify({
-                  type: "answer",
+                  type: "offer",
                   sdp: pc.localDescription,
                 })
               );
+              console.log("Sent SDP offer to signaling server");
+            } else if (msg.type === "answer" && pc) {
+              // Bot's SDP answer received — set as remote description
+              // RTCSessionDescription expects { type, sdp }, not a raw SDP string
+              await pc.setRemoteDescription(
+                new RTCSessionDescription({
+                  type: "answer",
+                  sdp: msg.sdp,
+                })
+              );
+              console.log("SDP answer set — waiting for audio track...");
             } else if (msg.type === "ice-candidate" && pc && msg.candidate) {
               await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
             }
@@ -113,13 +155,25 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
 
         ws.onerror = () => {
           if (cancelled) return;
+          clearSignalingTimeout();
+          // onerror fires first, then onclose follows — defer to onclose
+          // for the actual error message since it carries the close code
           setStatus("error");
-          setErrorMsg("WebSocket connection error");
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
           if (cancelled) return;
-          setStatus("disconnected");
+          clearSignalingTimeout();
+          // Close code 1006 = abnormal closure (server not reachable)
+          if (event.code === 1006) {
+            setStatus("error");
+            setErrorMsg(
+              "Could not reach the signaling server. " +
+              "Make sure it's running: ./run.sh signaling"
+            );
+          } else {
+            setStatus("disconnected");
+          }
         };
       } catch (err) {
         if (cancelled) return;

@@ -3,10 +3,11 @@
 # run.sh — Start The Memory Host (backend + frontend)
 #
 # Usage:
-#   ./run.sh              # Start both
+#   ./run.sh              # Start all: signaling + backend + frontend
 #   ./run.sh backend      # Start backend only
 #   ./run.sh frontend     # Start frontend only
-#   ./run.sh db           # Start PostgreSQL only
+#   ./run.sh signaling    # Start WebSocket signaling server only
+#   ./run.sh db           # PostgreSQL status (already running)
 #
 # Prerequisites:
 #   - PostgreSQL running (via Docker or native)
@@ -61,12 +62,20 @@ check_deps() {
 }
 
 start_db() {
-    info "Starting PostgreSQL via Docker Compose..."
-    cd "$ROOT_DIR"
-    docker compose up -d postgres
-    info "Waiting for PostgreSQL to be healthy..."
-    sleep 3
-    ok "PostgreSQL is running on port 5432"
+    info "PostgreSQL should already be running on localhost:5432"
+    info "(The application connects automatically via DATABASE_URL)"
+}
+
+start_signaling() {
+    info "Starting signaling server on port 3001..."
+    (
+        cd "$BACKEND_DIR"
+        source .venv/bin/activate
+        exec python -m backend.signaling_server --port 3001
+    ) &
+    SIGNALING_PID=$!
+    sleep 1
+    ok "Signaling server running (PID: $SIGNALING_PID)"
 }
 
 start_backend() {
@@ -116,6 +125,11 @@ case "${1:-all}" in
     db)
         start_db
         ;;
+    signaling)
+        start_signaling
+        # Wait forever so the process stays alive
+        wait
+        ;;
     backend)
         check_deps || exit 1
         start_backend
@@ -126,8 +140,9 @@ case "${1:-all}" in
         ;;
     all)
         check_deps || exit 1
-        # Start PostgreSQL in background
-        start_db
+
+        # Start signaling server in background
+        start_signaling
 
         # Start backend in background
         info "Starting backend in background..."
@@ -143,10 +158,11 @@ case "${1:-all}" in
         # Cleanup on exit
         info "Shutting down..."
         kill "$BACKEND_PID" 2>/dev/null || true
+        kill "$SIGNALING_PID" 2>/dev/null || true
         ok "Done!"
         ;;
     *)
-        echo "Usage: $0 {backend|frontend|db|all}"
+        echo "Usage: $0 {backend|frontend|signaling|db|all}"
         exit 1
         ;;
 esac

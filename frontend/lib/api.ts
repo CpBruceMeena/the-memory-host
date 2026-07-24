@@ -59,21 +59,63 @@ export interface HealthResponse {
 
 // ── BFF Proxy Functions (called from server components / route handlers) ──
 
+/** HTTP request timeout in milliseconds (5 seconds). */
+const REQUEST_TIMEOUT_MS = 5_000;
+
+/**
+ * Fetch with an AbortController timeout.
+ * Throws a descriptive error if the backend is unreachable.
+ */
+async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Extract a human-readable error message from a failed API response.
+ *
+ * Tries JSON body (FastAPI standard `detail` field), falls back to
+ * HTTP status + raw response text (truncated to 200 chars).
+ */
+async function extractError(res: Response): Promise<string> {
+  // Read body as text FIRST, then try JSON — the body stream can
+  // only be consumed once, so reading with .json() first would
+  // leave nothing for .text() in the fallback path.
+  const text = await res.text();
+  try {
+    const body = JSON.parse(text);
+    return body?.detail || body?.message || `HTTP ${res.status}`;
+  } catch {
+    return text
+      ? `HTTP ${res.status}: ${text.slice(0, 200)}`
+      : `HTTP ${res.status} (empty response)`;
+  }
+}
+
 /**
  * Create a new game session via the backend.
  */
 export async function createSession(
   playerName: string
 ): Promise<CreateSessionResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/sessions`, {
+  const res = await fetchWithTimeout(`${BACKEND_URL}/api/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ player_name: playerName } satisfies CreateSessionRequest),
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(err.detail || "Failed to create session");
+    throw new Error(await extractError(res));
   }
 
   return res.json();
@@ -85,13 +127,12 @@ export async function createSession(
 export async function getSession(
   sessionId: string
 ): Promise<SessionResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}`, {
+  const res = await fetchWithTimeout(`${BACKEND_URL}/api/sessions/${sessionId}`, {
     next: { revalidate: 0 }, // Never cache — always fetch fresh
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(err.detail || "Failed to fetch session");
+    throw new Error(await extractError(res));
   }
 
   return res.json();
@@ -104,15 +145,14 @@ export async function endSession(
   sessionId: string,
   reason?: string
 ): Promise<SessionResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/end`, {
+  const res = await fetchWithTimeout(`${BACKEND_URL}/api/sessions/${sessionId}/end`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reason } satisfies EndSessionRequest),
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(err.detail || "Failed to end session");
+    throw new Error(await extractError(res));
   }
 
   return res.json();
@@ -122,13 +162,12 @@ export async function endSession(
  * Fetch the leaderboard from the backend.
  */
 export async function getLeaderboard(): Promise<LeaderboardResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/leaderboard`, {
+  const res = await fetchWithTimeout(`${BACKEND_URL}/api/leaderboard`, {
     next: { revalidate: 60 }, // Cache for 60 seconds
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(err.detail || "Failed to fetch leaderboard");
+    throw new Error(await extractError(res));
   }
 
   return res.json();
@@ -138,7 +177,7 @@ export async function getLeaderboard(): Promise<LeaderboardResponse> {
  * Health check.
  */
 export async function healthCheck(): Promise<HealthResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/health`, {
+  const res = await fetchWithTimeout(`${BACKEND_URL}/api/health`, {
     next: { revalidate: 30 },
   });
 
