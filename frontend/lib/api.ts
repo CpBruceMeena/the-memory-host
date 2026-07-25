@@ -192,7 +192,7 @@ export async function endSession(
  */
 export async function getLeaderboard(): Promise<LeaderboardResponse> {
   const res = await fetchWithTimeout(`${BACKEND_URL}/api/leaderboard`, {
-    next: { revalidate: 60 }, // Cache for 60 seconds
+    next: { revalidate: 0 }, // Never cache — always fetch fresh
   });
 
   if (!res.ok) {
