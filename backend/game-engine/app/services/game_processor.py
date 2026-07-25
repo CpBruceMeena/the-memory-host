@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+import time
+from typing import TYPE_CHECKING, Any
 
 from pipecat.frames.frames import (
     EndFrame,
@@ -43,6 +44,13 @@ if TYPE_CHECKING:
     from app.services.prompt_templates import PromptTemplateSelector
 
 logger = logging.getLogger(__name__)
+
+MIN_TRANSCRIPT_THRESHOLD = 5
+"""Minimum transcript fragments before inline validation triggers.
+
+Accounts for STT producing multiple fragments per word (interim +
+final transcriptions). Higher values reduce premature validation.
+"""
 
 
 class MemoryGameProcessor(FrameProcessor):
@@ -79,11 +87,13 @@ class MemoryGameProcessor(FrameProcessor):
         # Internal state tracking
         self._started: bool = False
         self._interrupted: bool = False
-        self._speaking_task: Optional[asyncio.Task] = None
-        # Protects the initial welcome + word announcement phase from accidental
-        # interruption. User speech during this phase is silently ignored instead
-        # of triggering validation and ending the game prematurely.
+        # Protects the initial welcome + round announcement phase from accidental
+        # interruption. User speech during this window is silently ignored.
         self._announcing_phase: bool = False
+        # Transcript timeout fallback: triggers validation after 4 seconds
+        # of silence (when VAD doesn't emit UserStoppedSpeakingFrame).
+        self._validate_task: Any = None
+        self._last_transcript_time: float = 0.0
 
         logger.info(
             "MemoryGameProcessor initialized (max_rounds=%d)", max_rounds
@@ -154,9 +164,11 @@ class MemoryGameProcessor(FrameProcessor):
             self.game.expected_sequence,
         )
 
-        # Protect the initial announcement phase from accidental interruption.
-        # User speech during this window is silently ignored. The flag is cleared
-        # by the background task after all words are spoken.
+        # Update cache immediately so the frontend's polling sees
+        # current_round > 0 and doesn't show the 30-second timeout.
+        await self._update_cache()
+
+        # Protect initial announcement from accidental interruption
         self._announcing_phase = True
 
         # Select a random start/welcome prompt
@@ -167,17 +179,24 @@ class MemoryGameProcessor(FrameProcessor):
         )
         await self._say(prompt)
 
-        # Announce the first round via background task (returns immediately) and
-        # let the background task transition to LISTEN after all words are spoken.
-        # Do NOT set state to LISTEN here — that would cause the background task
-        # to exit immediately without speaking any words.
+        # Announce the first round — words are embedded directly in the
+        # template via the {sequence} placeholder with period separators.
+        # This is a single synchronous TextFrame push so the words are
+        # guaranteed to be spoken by TTS (no background task required).
         self.game.state = GameState.SPEAK_SEQUENCE
         await self._announce_round()
 
+        # Clear the announcing phase flag before transitioning to LISTEN.
+        # From here on, user speech will trigger validation normally.
+        self._announcing_phase = False
+
+        # Bot has finished speaking the sequence — listen for user response
+        self.game.state = GameState.LISTEN
+        logger.debug("Transitioned to LISTEN — awaiting user response")
+
     async def _on_end(self) -> None:
         """Handle session end — clean up game state."""
-        # Cancel any running word announcement task
-        await self._cancel_speaking()
+        await self._cancel_validate()
         if self.game.state != GameState.ENDED:
             logger.info(
                 "Game ending — final state: %s, score: %d, round: %d",
@@ -187,7 +206,7 @@ class MemoryGameProcessor(FrameProcessor):
             )
             self.game.state = GameState.ENDED
 
-    # ── Interruption Handling (Step 10) ────────────────────────
+    # ── Interruption Handling ─────────────────────────────────
 
     async def _on_user_started_speaking(self) -> None:
         """Handle user interrupting or beginning to speak.
@@ -196,16 +215,12 @@ class MemoryGameProcessor(FrameProcessor):
         the user's speech is treated as an interruption. The bot
         stops talking and transitions to LISTEN mode.
 
-        During the _announcing_phase (initial welcome + first word sequence),
+        During the _announcing_phase (initial welcome + word announcement),
         user speech is silently ignored to prevent accidental interruption
-        from naturally responding to the welcome message.
+        from responding to the welcome message (e.g. saying "okay" or
+        clearing throat during the first few seconds).
         """
         if self._announcing_phase:
-            # During the initial announcement window, silence any user speech.
-            # The welcome template no longer asks questions, but the user
-            # might still cough, clear their throat, or say "okay" during
-            # the ~5-6 seconds before the first word. Don't let this
-            # accidentally end the game.
             logger.debug(
                 "Ignoring speech during announcing phase (state=%s)",
                 self.game.state.value if self.game.state else "None",
@@ -214,12 +229,7 @@ class MemoryGameProcessor(FrameProcessor):
             return
 
         if self.game.state in (GameState.SPEAK_SEQUENCE, GameState.ROUND_PASS):
-            # Cancel any running word announcement task immediately
-            await self._cancel_speaking()
-
             # User interrupted bot mid-speech
-            # Pipecat natively handles TTS interruption — we just need
-            # to transition state and let the pipeline handle the rest
             self._interrupted = True
             self.game.state = GameState.LISTEN
             self.game.user_transcript_buffer = []
@@ -251,15 +261,52 @@ class MemoryGameProcessor(FrameProcessor):
 
         Accumulates transcript text fragments while in LISTEN state.
         These are later parsed into a flat word list during validation.
+
+        Uses a two-layer approach to detect when the user has finished:
+        1. Inline threshold: if enough fragments accumulate (>= 5),
+           trigger validation directly (push_frame works here).
+        2. Timer fallback: 4-second silence window via background task.
+           If push_frame doesn't work from the task, game state still
+           updates silently (frontend picks it up via polling).
         """
         if self.game.state == GameState.LISTEN:
+            now = time.monotonic()
+            gap = now - self._last_transcript_time if self._last_transcript_time > 0 else 0
+            self._last_transcript_time = now
+
             self.game.user_transcript_buffer.append(frame.text)
             # Log at INFO level so we can see transcripts in the app log
             logger.info(
-                "Transcript collected: '%s' (buffer size: %d)",
+                "Transcript collected: '%s' (buffer size: %d, gap: %.1fs)",
                 frame.text,
                 len(self.game.user_transcript_buffer),
+                gap,
             )
+
+            # Reset the timer-based fallback on each transcript
+            if self._validate_task and not self._validate_task.done():
+                self._validate_task.cancel()
+            if not self.game.is_validating:
+                self._validate_task = asyncio.create_task(
+                    self._timer_validate()
+                )
+
+            # Inline threshold: if enough fragments have accumulated,
+            # trigger validation right now (reliable push_frame context).
+            threshold = max(
+                MIN_TRANSCRIPT_THRESHOLD,
+                len(self.game.expected_sequence) + 2,
+            )
+            if (
+                len(self.game.user_transcript_buffer) >= threshold
+                and not self.game.is_validating
+            ):
+                logger.info(
+                    "Transcript threshold reached (%d) — triggering validation",
+                    len(self.game.user_transcript_buffer),
+                )
+                self.game.state = GameState.VALIDATE
+                await self._validate_response()
         else:
             logger.warning(
                 "Transcript received but not in LISTEN state (state=%s): '%s'",
@@ -289,6 +336,9 @@ class MemoryGameProcessor(FrameProcessor):
                 self.game.user_transcript_buffer
             )
             expected = self.game.expected_sequence
+
+            # Cancel pending timer fallback since we're validating now
+            await self._cancel_validate()
 
             logger.info(
                 "Validating — expected: %s, user: %s",
@@ -341,9 +391,6 @@ class MemoryGameProcessor(FrameProcessor):
 
         Updates score, generates new sequence, announces next round.
         """
-        # Cancel any previous speaking task
-        await self._cancel_speaking()
-
         # Calculate score for this round
         round_score = self.game.current_round
         self.game.score += round_score
@@ -373,28 +420,29 @@ class MemoryGameProcessor(FrameProcessor):
             self.game.expected_sequence,
         )
 
-        # Annouce success and start background word announcement.
-        # Pass sequence="" to fill the {sequence} placeholder in templates.
+        # Build a single announcement string with words embedded via period
+        # separators. This guarantees the words are spoken by TTS (no
+        # background task required).
+        sequence_str = ". ".join(self.game.expected_sequence)
         prompt = self.prompt_selector.get(
             "success",
             default=(
                 "Correct! Moving to round {round_number}. "
-                "Score: {score}."
+                "Score: {score}. Your words are. {sequence}. "
+                "Now repeat those words back."
             ),
             round_number=self.game.current_round,
             score=self.game.score,
-            sequence="",
+            sequence=sequence_str,
         )
         await self._say(prompt)
 
-        # Start background task for word-by-word announcement
-        self.game.state = GameState.ROUND_PASS
-        self._speaking_task = asyncio.create_task(
-            self._speak_sequence_with_pauses(
-                words=self.game.expected_sequence,
-                next_state=GameState.LISTEN,
-            )
-        )
+        # Prompt the user to repeat the words (the success templates don't
+        # include this, unlike the round_intro templates)
+        await self._say("Now repeat those words back.")
+
+        # Bot has finished speaking the next sequence — listen for user
+        self.game.state = GameState.LISTEN
 
     async def _on_game_over(
         self, user_words: list[str], expected: list[str]
@@ -463,29 +511,20 @@ class MemoryGameProcessor(FrameProcessor):
     async def _announce_round(self) -> None:
         """Announce the current round and word sequence to the user.
 
-        Sends a setup prompt (round number, instructions) synchronously,
-        then starts a background asyncio task that speaks each word with
-        a 1-second pause between them. This avoids blocking the pipeline
-        while still providing the requested 1-second word gaps.
+        The words are embedded directly into the prompt template via the
+        {sequence} placeholder, formatted with period separators. TTS
+        naturally pauses at each period boundary (~300ms), and the words
+        are guaranteed to be spoken since they're part of a single
+        synchronous TextFrame push.
         """
-        # Send the round intro text (no words — they come separately via
-        # the background task). Pass sequence="" to fill the {sequence}
-        # placeholder in templates so format() doesn't crash.
+        sequence_str = ". ".join(self.game.expected_sequence)
         prompt = self.prompt_selector.get(
             "round_intro",
-            default="Round {round_number}. Listen carefully.",
+            default="Round {round_number}. Listen carefully. {sequence}.",
             round_number=self.game.current_round,
-            sequence="",
+            sequence=sequence_str,
         )
         await self._say(prompt)
-
-        # Start background task for word-by-word announcement
-        self._speaking_task = asyncio.create_task(
-            self._speak_sequence_with_pauses(
-                words=self.game.expected_sequence,
-                next_state=GameState.LISTEN,
-            )
-        )
 
     async def _say(self, text: str) -> None:
         """Push a TextFrame with the bot's speech into the pipeline.
@@ -494,66 +533,42 @@ class MemoryGameProcessor(FrameProcessor):
         """
         await self.push_frame(TextFrame(text))
 
-    async def _cancel_speaking(self) -> None:
-        """Cancel the currently running word announcement task, if any."""
-        if self._speaking_task and not self._speaking_task.done():
-            self._speaking_task.cancel()
+    async def _cancel_validate(self) -> None:
+        """Cancel the pending timer-based validation task."""
+        if self._validate_task and not self._validate_task.done():
+            self._validate_task.cancel()
             try:
-                await self._speaking_task
+                await self._validate_task
             except asyncio.CancelledError:
                 pass
-        self._speaking_task = None
+        self._validate_task = None
 
-    async def _speak_sequence_with_pauses(
-        self,
-        words: list[str],
-        next_state: GameState,
-    ) -> None:
-        """Announce each word with a 1-second pause between them.
+    async def _timer_validate(self) -> None:
+        """Fallback: wait 4 seconds, then trigger validation.
 
-        Runs as a background asyncio task so it doesn't block the
-        pipeline's process_frame. Checks the game state before each
-        word — if the state has changed (e.g. user interrupted),
-        it stops early.
-
-        Args:
-            words: The word sequence to speak.
-            next_state: State to transition to after all words.
+        Runs as a background asyncio task. Cancelled and restarted on
+        each new transcript. If push_frame doesn't route the result
+        TextFrame from this context, the game state still updates
+        silently and the frontend picks it up via polling.
         """
         try:
-            for word in words:
-                await asyncio.sleep(1.0)
-                # Stop early if interrupted or game ended
-                if self.game.state not in (
-                    GameState.SPEAK_SEQUENCE,
-                    GameState.ROUND_PASS,
-                ):
-                    logger.debug(
-                        "Word announcement stopped early (state=%s)",
-                        self.game.state.value if self.game.state else "None",
-                    )
-                    return
-                await self._say(word)
-
-            await asyncio.sleep(1.0)
-            # Only transition if still in speaking state
-            if self.game.state in (
-                GameState.SPEAK_SEQUENCE,
-                GameState.ROUND_PASS,
+            await asyncio.sleep(4.0)
+            if (
+                self.game.state == GameState.LISTEN
+                and not self.game.is_validating
+                and len(self.game.user_transcript_buffer) >= 1
             ):
-                await self._say("Now repeat those words back.")
-                self.game.state = next_state
-                logger.debug(
-                    "Transitioned to %s after word announcement",
-                    next_state.value,
+                logger.info(
+                    "Transcript timeout (4s) — triggering validation "
+                    "with %d fragments",
+                    len(self.game.user_transcript_buffer),
                 )
+                self.game.state = GameState.VALIDATE
+                await self._validate_response()
         except asyncio.CancelledError:
-            logger.debug("Word announcement task cancelled")
+            pass
         except Exception:
-            logger.exception("Error in word announcement task")
-        finally:
-            # Clear the announcing phase flag when the task finishes
-            self._announcing_phase = False
+            logger.exception("Error in timer validation")
 
     async def _check_already_scored(self) -> bool:
         """Check if this round already has a response recorded.
