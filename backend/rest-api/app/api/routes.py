@@ -70,17 +70,22 @@ async def create_session(
     Creates a database record, notifies the game-engine service
     to start the voice bot, and returns session info to the frontend.
     """
-    # Check if player has an active session already
+    # If the player already has an active session, mark it as
+    # interrupted so we don't accumulate orphaned active sessions.
     existing = await db.execute(
         select(Session).where(
             Session.player_name == body.player_name,
             Session.status == "active",
         )
     )
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Player '{body.player_name}' already has an active session",
+    old_session = existing.scalar_one_or_none()
+    if old_session:
+        old_session.status = "interrupted"
+        old_session.ended_at = datetime.now(timezone.utc)
+        logger.info(
+            "Closed previous active session %s for player '%s'",
+            old_session.id,
+            body.player_name,
         )
 
     # Create session with placeholder room info (will update after
@@ -302,27 +307,18 @@ async def get_leaderboard(
     )
     sessions = result.scalars().all()
 
-    # Build leaderboard by grouping by player_name
-    player_scores: dict[str, dict] = {}
-    for s in sessions:
-        if s.player_name not in player_scores:
-            player_scores[s.player_name] = {
-                "player_name": s.player_name,
-                "best_score": s.score,
-                "best_round": s.current_round,
-                "games_played": 0,
-                "last_played": s.created_at,
-            }
-        entry = player_scores[s.player_name]
-        entry["best_score"] = max(entry["best_score"], s.score)
-        entry["best_round"] = max(entry["best_round"], s.current_round)
-        entry["games_played"] += 1
-        if s.created_at > entry["last_played"]:
-            entry["last_played"] = s.created_at
-
-    leaderboard_data = sorted(
-        player_scores.values(),
-        key=lambda x: (-x["best_score"], -x["best_round"]),
-    )[:20]
+    # Show each completed session as its own leaderboard entry
+    # (not grouped by player_name), so every individual game result
+    # is visible. Sorted by score descending, then round descending.
+    leaderboard_data = [
+        {
+            "player_name": s.player_name,
+            "best_score": s.score,
+            "best_round": s.current_round,
+            "games_played": 1,
+            "last_played": s.created_at,
+        }
+        for s in sessions
+    ]
 
     return LeaderboardResponse(leaderboard=leaderboard_data)

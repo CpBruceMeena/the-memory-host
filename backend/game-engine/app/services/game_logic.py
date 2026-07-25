@@ -18,8 +18,8 @@ def generate_sequence(
 ) -> list[str]:
     """Generate a unique word sequence for the given round.
 
-    The number of words = round_number + 2.
-    E.g. Round 1 -> 3 words, Round 2 -> 4 words, Round 10 -> 12 words.
+    The number of words = get_words_for_round(round_number).
+    E.g. Round 1 -> 1 word, Round 2 -> 2 words, Round 10 -> 10 words.
 
     Args:
         round_number: Current round (1-indexed).
@@ -32,7 +32,7 @@ def generate_sequence(
     Raises:
         ValueError: If the word pool is too small for the requested round.
     """
-    word_count = round_number + 2
+    word_count = get_words_for_round(round_number)
     pool = WORD_POOL
 
     if word_count > len(pool):
@@ -154,17 +154,12 @@ def parse_transcript_to_words(transcript_buffer: list[str]) -> list[str]:
 def get_words_for_round(round_number: int) -> int:
     """Get the number of words for a given round.
 
-    Progressive difficulty: starts with single words and gradually
-    increases. First 3 rounds ramp up quickly, then plateau and
-    slowly increase to a max of 7 words at level 10.
-
-    Round   1: 1 word
-    Round   2: 2 words
-    Round   3: 3 words
-    Rounds 4-5: 4 words
-    Rounds 6-7: 5 words
-    Rounds 8-9: 6 words
-    Round  10: 7 words
+    Each level has words equal to the level number:
+    Level  1: 1 word
+    Level  2: 2 words
+    Level  3: 3 words
+    ...
+    Level 10: 10 words
 
     Args:
         round_number: 1-indexed round number (1-10).
@@ -172,17 +167,4 @@ def get_words_for_round(round_number: int) -> int:
     Returns:
         Number of words in the sequence for that round.
     """
-    if round_number <= 1:
-        return 1
-    elif round_number <= 2:
-        return 2
-    elif round_number <= 3:
-        return 3
-    elif round_number <= 5:
-        return 4
-    elif round_number <= 7:
-        return 5
-    elif round_number <= 9:
-        return 6
-    else:
-        return 7
+    return round_number

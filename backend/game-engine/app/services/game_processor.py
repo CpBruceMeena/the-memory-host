@@ -417,6 +417,17 @@ class MemoryGameProcessor(FrameProcessor):
                 await self._on_round_pass(user_words, result)
             elif self.game.retries_remaining > 0:
                 # === PARTIAL: retry the same round ===
+                # Track the best attempt across all retries so we
+                # save the user's highest score, not just the last try.
+                if result["correct_count"] > self.game.best_retry_count:
+                    self.game.best_retry_count = result["correct_count"]
+                    self.game.best_retry_words = user_words
+                    logger.info(
+                        "New best retry: %d/%d correct",
+                        result["correct_count"],
+                        result["total"],
+                    )
+
                 self.game.retries_remaining -= 1
                 logger.info(
                     "Partial score — %d retries remaining for round %d",
@@ -426,12 +437,23 @@ class MemoryGameProcessor(FrameProcessor):
                 await self._on_retry(user_words, expected, result)
             else:
                 # === NO RETRIES LEFT: game over ===
+                # Use the best result from retries, not the last attempt
+                best_words = (
+                    self.game.best_retry_words
+                    if self.game.best_retry_words
+                    else user_words
+                )
                 await self._save_round_to_db(
                     round_number=self.game.current_round,
                     word_sequence=expected,
-                    user_response=user_words,
+                    user_response=best_words,
                     is_correct=False,
                 )
+
+                # Apply best retry score to total score
+                if self.game.best_retry_count > 0:
+                    self.game.score += self.game.best_retry_count
+
                 await self._update_cache()
                 await self._on_game_over(user_words, expected)
 
@@ -838,7 +860,14 @@ class MemoryGameProcessor(FrameProcessor):
         self.cache.invalidate_leaderboard()
 
     async def _end_session(self) -> None:
-        """Update session status to completed in database and cache."""
+        """Update session status to completed in database and cache.
+
+        Critical: must commit() after flush() so the REST API
+        (which runs in a separate process with its own DB connection)
+        can see the status change. Without commit(), PostgreSQL's
+        READ COMMITTED isolation hides the update from other
+        connections until the entire pipeline stops.
+        """
         if not self.game.session_id:
             return
 
@@ -852,6 +881,13 @@ class MemoryGameProcessor(FrameProcessor):
             db_session.current_round = self.game.current_round
             db_session.ended_at = datetime.now(timezone.utc)
             await self.db.flush()
+
+        # Commit so the REST API can see the status change immediately.
+        try:
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            logger.exception("Failed to commit session end")
 
         # Remove from active cache
         self.cache.remove_session(str(self.game.session_id))

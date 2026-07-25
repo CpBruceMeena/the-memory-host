@@ -75,6 +75,10 @@ class GameData:
     retries_remaining: int = 3
     max_retries_per_round: int = 3
 
+    # Best retry result for the current round (saved to DB when game over)
+    best_retry_words: list[str] = field(default_factory=list)
+    best_retry_count: int = 0
+
     def reset(self):
         """Reset game data for a new game (keeps session_id + player_name)."""
         self.state = GameState.IDLE
@@ -86,6 +90,8 @@ class GameData:
         self.incorrect_round_data = None
         self.used_sequences = set()
         self.retries_remaining = self.max_retries_per_round
+        self.best_retry_words = []
+        self.best_retry_count = 0
 
     @property
     def is_active(self) -> bool:
