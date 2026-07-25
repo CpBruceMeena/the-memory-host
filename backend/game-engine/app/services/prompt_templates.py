@@ -9,6 +9,7 @@ Categories:
     round_intro  — Announce round number and word sequence
     success      — User answers correctly (round pass)
     failure      — User answers incorrectly
+    retry        — User gets partial score, offer to retry same round
     game_over    — Final score announcement (won or lost)
     interrupt    — Recovery phrases after user interrupts bot
     waiting      — Gentle prompts when user is slow to respond
@@ -45,30 +46,33 @@ class PromptTemplateSelector:
                 "Good luck.",
             ],
             # ── Round Introduction ─────────────────────────────────
+            # Uses {numbered_sequence} which produces:
+            #   "Word 1: marble. Word 2: chocolate. Word 3: thunder"
             "round_intro": [
-                "Round {round_number}. Here are your words. {sequence}. "
+                "Round {round_number}. Here are your words. {numbered_sequence}. "
                 "Now it's your turn to repeat them back to me.",
-                "Okay, round {round_number}. Listen closely. {sequence}. "
+                "Okay, round {round_number}. Listen closely. {numbered_sequence}. "
                 "Go ahead and repeat that back.",
-                "Here comes round {round_number}. {sequence}. "
+                "Here comes round {round_number}. {numbered_sequence}. "
                 "Take your time and say them back when you're ready.",
-                "Round {round_number}. {sequence}. "
+                "Round {round_number}. {numbered_sequence}. "
                 "Repeat those back to me whenever you're ready.",
             ],
             # ── Success / Round Pass ────────────────────────────────
             "success": [
-                "That's correct. You've got a great memory. Let's move to round "
+                "That's correct! You've got a great memory. Let's move to round "
                 "{round_number}. Your score is now {score}. "
-                "Here's your next sequence. {sequence}.",
-                "Perfect. You nailed it. On to round {round_number}. "
-                "Score: {score}. Listen up. {sequence}.",
-                "Absolutely right. You're on fire. Round {round_number} coming up. "
-                "Score: {score}. Your words are. {sequence}.",
-                "Correct. Excellent memory. Let's see how you do in round "
+                "Here's your next sequence. {numbered_sequence}.",
+                "Perfect! You nailed it. On to round {round_number}. "
+                "Score: {score}. Listen up. {numbered_sequence}.",
+                "Absolutely right! You're on fire. Round {round_number} coming up. "
+                "Score: {score}. Your words are. {numbered_sequence}.",
+                "Correct! Excellent memory. Let's see how you do in round "
                 "{round_number}. Current score: {score}. "
-                "Here's your new sequence. {sequence}.",
+                "Here's your new sequence. {numbered_sequence}.",
             ],
             # ── Failure / Wrong Answer ─────────────────────────────
+            # Used when retries are exhausted — final game over
             "failure": [
                 "Oh, that's not quite right. The correct sequence was. "
                 "{correct_sequence}. You said. {user_said}. "
@@ -82,6 +86,22 @@ class PromptTemplateSelector:
                 "Not quite. The sequence was. {correct_sequence}. "
                 "You said. {user_said}. Final score: {score}. "
                 "Better luck next time.",
+            ],
+            # ── Retry / Partial Score ──────────────────────────────
+            # Used when user gets some words correct but not all
+            "retry": [
+                "Good try! You got {correct_count} out of {total} correct. "
+                "Let's try the same words again. {numbered_sequence}. "
+                "Repeat them back to me when you're ready.",
+                "Almost there! {correct_count} out of {total} correct. "
+                "I'll say the words once more. {numbered_sequence}. "
+                "Go ahead.",
+                "Not bad! You remembered {correct_count} of {total} words. "
+                "Here they are again. {numbered_sequence}. "
+                "Take your time and repeat them back.",
+                "Getting warmer! {correct_count} of {total} words correct. "
+                "Let's try this round one more time. {numbered_sequence}. "
+                "Say them back when you're ready.",
             ],
             # ── Game Over / Win ────────────────────────────────────
             "game_over": [

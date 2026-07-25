@@ -57,13 +57,14 @@ def generate_sequence(
     return random.sample(pool, word_count)
 
 
-def compare_sequences(
+def compare_word_by_word(
     expected: list[str],
     actual: list[str],
-    *,
-    exact_order: bool = True,
-) -> bool:
-    """Compare user's response against the expected word sequence.
+) -> dict:
+    """Compare user's response against the expected word sequence word-by-word.
+
+    Each word is matched independently at its position in the sequence.
+    Returns the number of correctly matched words and a detailed breakdown.
 
     Normalizes both sequences by:
     - Stripping whitespace
@@ -71,21 +72,59 @@ def compare_sequences(
     - Removing trailing punctuation (. , ! ?)
 
     Args:
-        expected: The correct word sequence.
-        actual: The user's spoken words (parsed from transcript).
-        exact_order: If True (default), words must be in the same order.
-                     If False, words just need to match (any order).
+        expected: The correct word sequence (list of words).
+        actual: The user's spoken words (parsed from transcript buffer).
 
     Returns:
-        True if the sequences match according to the comparison rules.
+        A dict with:
+            correct_count: Number of words that matched at their position.
+            total: Total number of expected words.
+            score: Percentage score (0.0 - 1.0).
+            is_perfect: True if all words matched correctly.
+            details: List of dicts with 'expected', 'actual', 'correct' per position.
     """
     expected_norm = [_normalize_word(w) for w in expected]
     actual_norm = [_normalize_word(w) for w in actual]
 
-    if exact_order:
-        return expected_norm == actual_norm
-    else:
-        return sorted(expected_norm) == sorted(actual_norm)
+    total = len(expected_norm)
+    correct_count = 0
+    details = []
+
+    for i in range(total):
+        user_word = actual_norm[i] if i < len(actual_norm) else ""
+        is_correct = user_word == expected_norm[i]
+        if is_correct:
+            correct_count += 1
+        details.append({
+            "position": i + 1,
+            "expected": expected_norm[i],
+            "actual": user_word,
+            "correct": is_correct,
+        })
+
+    return {
+        "correct_count": correct_count,
+        "total": total,
+        "score": correct_count / total if total > 0 else 0.0,
+        "is_perfect": correct_count == total,
+        "details": details,
+    }
+
+
+def format_numbered_sequence(words: list[str]) -> str:
+    """Format a word sequence as numbered items for TTS.
+
+    Produces: "Word 1: marble. Word 2: chocolate. Word 3: thunder"
+    Each word is its own sentence, giving the TTS natural pauses.
+
+    Args:
+        words: The word sequence to format.
+
+    Returns:
+        A formatted string with numbered words.
+    """
+    parts = [f"Word {i + 1}: {word}" for i, word in enumerate(words)]
+    return ". ".join(parts)
 
 
 def _normalize_word(word: str) -> str:

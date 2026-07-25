@@ -35,7 +35,8 @@ from app.core.cache import GameCache
 from app.models.round import Round
 from app.models.session import Session
 from app.services.game_logic import (
-    compare_sequences,
+    compare_word_by_word,
+    format_numbered_sequence,
     generate_sequence,
     get_words_for_round,
     parse_transcript_to_words,
@@ -177,6 +178,10 @@ class MemoryGameProcessor(FrameProcessor):
         # Update cache immediately so the frontend's polling sees
         # current_round > 0 and doesn't show the 30-second timeout.
         await self._update_cache()
+
+        # Also write current_round to the database directly so the
+        # REST API (which has its own in-memory cache) can read it.
+        await self._init_round_in_db()
 
         # Protect initial announcement from accidental interruption
         self._announcing_phase = True
@@ -379,8 +384,15 @@ class MemoryGameProcessor(FrameProcessor):
                 user_words,
             )
 
-            # === COMPARE ===
-            is_correct = compare_sequences(expected, user_words)
+            # === COMPARE WORD-BY-WORD (PARTIAL SCORING) ===
+            result = compare_word_by_word(expected, user_words)
+
+            logger.info(
+                "Word-by-word comparison: %d/%d correct (perfect=%s)",
+                result["correct_count"],
+                result["total"],
+                result["is_perfect"],
+            )
 
             # === LAYER 3: APPLICATION-LEVEL DOUBLE-SCORING CHECK ===
             already_scored = await self._check_already_scored()
@@ -393,20 +405,34 @@ class MemoryGameProcessor(FrameProcessor):
                 )
                 return
 
-            # === RECORD ROUND IN DATABASE ===
-            await self._save_round_to_db(
-                round_number=self.game.current_round,
-                word_sequence=expected,
-                user_response=user_words,
-                is_correct=is_correct,
-            )
-
-            # === UPDATE CACHE ===
-            await self._update_cache()
-
-            if is_correct:
-                await self._on_round_pass(user_words)
+            if result["is_perfect"]:
+                # === PERFECT: save to DB, advance to next round ===
+                await self._save_round_to_db(
+                    round_number=self.game.current_round,
+                    word_sequence=expected,
+                    user_response=user_words,
+                    is_correct=True,
+                )
+                await self._update_cache()
+                await self._on_round_pass(user_words, result)
+            elif self.game.retries_remaining > 0:
+                # === PARTIAL: retry the same round ===
+                self.game.retries_remaining -= 1
+                logger.info(
+                    "Partial score — %d retries remaining for round %d",
+                    self.game.retries_remaining,
+                    self.game.current_round,
+                )
+                await self._on_retry(user_words, expected, result)
             else:
+                # === NO RETRIES LEFT: game over ===
+                await self._save_round_to_db(
+                    round_number=self.game.current_round,
+                    word_sequence=expected,
+                    user_response=user_words,
+                    is_correct=False,
+                )
+                await self._update_cache()
                 await self._on_game_over(user_words, expected)
 
         except Exception:
@@ -418,19 +444,27 @@ class MemoryGameProcessor(FrameProcessor):
             self.game.is_validating = False
 
     async def _on_round_pass(
-        self, user_words: list[str]
+        self, user_words: list[str], result: dict
     ) -> None:
-        """Handle a correct answer — advance to next round.
+        """Handle a perfect answer — advance to next round.
 
-        Updates score, generates new sequence, announces next round.
+        Awards partial score based on correctly matched word positions,
+        generates new sequence, announces next round.
+
+        Args:
+            user_words: Parsed words from the user's speech.
+            result: Comparison result dict from compare_word_by_word().
         """
-        # Calculate score for this round
-        round_score = self.game.current_round
+        # Calculate score based on correctly matched words
+        round_score = result["correct_count"]
         self.game.score += round_score
         self.game.current_round += 1
 
+        # Reset retries for the next round
+        self.game.retries_remaining = self.game.max_retries_per_round
+
         logger.info(
-            "Round pass! Score: +%d = %d, next round: %d",
+            "Round pass! +%d points (total: %d), next round: %d",
             round_score,
             self.game.score,
             self.game.current_round,
@@ -453,34 +487,68 @@ class MemoryGameProcessor(FrameProcessor):
             self.game.expected_sequence,
         )
 
-        # Build a single announcement string with words embedded via period
-        # separators. This guarantees the words are spoken by TTS (no
-        # background task required).
-        sequence_str = ". ".join(self.game.expected_sequence)
+        # Announce the next round with numbered words
+        numbered = format_numbered_sequence(self.game.expected_sequence)
         prompt = self.prompt_selector.get(
             "success",
             default=(
                 "Correct! Moving to round {round_number}. "
-                "Score: {score}. Your words are. {sequence}. "
-                "Now repeat those words back."
+                "Score: {score}. Your words are. {numbered_sequence}."
             ),
             round_number=self.game.current_round,
             score=self.game.score,
-            sequence=sequence_str,
+            numbered_sequence=numbered,
         )
         await self._say(prompt)
 
-        # Prompt the user to repeat the words (the success templates don't
-        # include this, unlike the round_intro templates)
-        await self._say("Now repeat those words back.")
-
         # Bot has finished speaking the next sequence — listen for user
+        self.game.state = GameState.LISTEN
+
+    async def _on_retry(
+        self, user_words: list[str], expected: list[str], result: dict
+    ) -> None:
+        """Handle a partial score — retry the same round.
+
+        Tells the user how many words they got correct, re-announces
+        the same word sequence, and transitions back to LISTEN.
+
+        Args:
+            user_words: Parsed words from the user's speech.
+            expected: The expected word sequence.
+            result: Comparison result dict from compare_word_by_word().
+        """
+        self.game.state = GameState.SPEAK_SEQUENCE
+
+        logger.info(
+            "Round %d retry — %d/%d correct, %d retries remaining",
+            self.game.current_round,
+            result["correct_count"],
+            result["total"],
+            self.game.retries_remaining,
+        )
+
+        # Select a retry prompt with the score breakdown
+        numbered = format_numbered_sequence(expected)
+        prompt = self.prompt_selector.get(
+            "retry",
+            default=(
+                "Good try! You got {correct_count} out of {total} correct. "
+                "Let's try again. {numbered_sequence}. "
+                "Repeat them back to me."
+            ),
+            correct_count=result["correct_count"],
+            total=result["total"],
+            numbered_sequence=numbered,
+        )
+        await self._say(prompt)
+
+        # Go back to listening for user response
         self.game.state = GameState.LISTEN
 
     async def _on_game_over(
         self, user_words: list[str], expected: list[str]
     ) -> None:
-        """Handle a wrong answer — end the game."""
+        """Handle all retries exhausted — end the game."""
         self.game.incorrect_round_data = {
             "expected": expected,
             "user_said": user_words,
@@ -490,7 +558,7 @@ class MemoryGameProcessor(FrameProcessor):
         self.game.state = GameState.GAME_OVER
 
         logger.info(
-            "Game over — wrong answer. Score: %d, round: %d",
+            "Game over — all retries exhausted. Score: %d, round: %d",
             self.game.score,
             self.game.current_round,
         )
@@ -544,18 +612,21 @@ class MemoryGameProcessor(FrameProcessor):
     async def _announce_round(self) -> None:
         """Announce the current round and word sequence to the user.
 
-        The words are embedded directly into the prompt template via the
-        {sequence} placeholder, formatted with period separators. TTS
-        naturally pauses at each period boundary (~300ms), and the words
-        are guaranteed to be spoken since they're part of a single
-        synchronous TextFrame push.
+        Words are announced with numbered labels via the prompt template's
+        {numbered_sequence} placeholder, formatted as:
+            "Word 1: marble. Word 2: chocolate. Word 3: thunder"
+        Each word is its own sentence so TTS naturally adds pauses.
         """
-        sequence_str = ". ".join(self.game.expected_sequence)
+        numbered = format_numbered_sequence(self.game.expected_sequence)
         prompt = self.prompt_selector.get(
             "round_intro",
-            default="Round {round_number}. Listen carefully. {sequence}.",
+            default=(
+                "Round {round_number}. Here are your words. "
+                "{numbered_sequence}. "
+                "Now repeat them back to me."
+            ),
             round_number=self.game.current_round,
-            sequence=sequence_str,
+            numbered_sequence=numbered,
         )
         await self._say(prompt)
 
@@ -638,6 +709,36 @@ class MemoryGameProcessor(FrameProcessor):
             pass
         except Exception:
             logger.exception("Error in timer validation")
+
+    async def _init_round_in_db(self) -> None:
+        """Write current_round to the database so the REST API can see it.
+
+        The REST API runs in a separate process with its own in-memory
+        cache. Writing to the database ensures the frontend's polling
+        (which hits the REST API) sees current_round > 0 immediately
+        instead of timing out with 'Game Didn't Start'.
+        """
+        if not self.game.session_id:
+            return
+
+        try:
+            result = await self.db.execute(
+                select(Session).where(Session.id == self.game.session_id)
+            )
+            db_session = result.scalar_one_or_none()
+            if db_session:
+                db_session.current_round = self.game.current_round
+                await self.db.flush()
+                logger.debug(
+                    "Updated db session %s current_round=%d",
+                    self.game.session_id,
+                    self.game.current_round,
+                )
+        except Exception:
+            logger.warning(
+                "Failed to init round in db for session %s",
+                self.game.session_id,
+            )
 
     async def _check_already_scored(self) -> bool:
         """Check if this round already has a response recorded.

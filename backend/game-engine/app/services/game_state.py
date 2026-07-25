@@ -71,6 +71,10 @@ class GameData:
     # validation without waiting for VAD or transcript threshold.
     user_done_event: Any = field(default_factory=asyncio.Event)
 
+    # Retry tracking: how many attempts left for the current round
+    retries_remaining: int = 3
+    max_retries_per_round: int = 3
+
     def reset(self):
         """Reset game data for a new game (keeps session_id + player_name)."""
         self.state = GameState.IDLE
@@ -81,6 +85,7 @@ class GameData:
         self.is_validating = False
         self.incorrect_round_data = None
         self.used_sequences = set()
+        self.retries_remaining = self.max_retries_per_round
 
     @property
     def is_active(self) -> bool:
