@@ -36,7 +36,6 @@ from app.models.round import Round
 from app.models.session import Session
 from app.services.game_logic import (
     compare_word_by_word,
-    format_numbered_sequence,
     generate_sequence,
     get_words_for_round,
     parse_transcript_to_words,
@@ -516,23 +515,32 @@ class MemoryGameProcessor(FrameProcessor):
             self.game.expected_sequence,
         )
 
-        # Announce the next round with numbered words
-        numbered = format_numbered_sequence(self.game.expected_sequence)
-        prompt = self.prompt_selector.get(
+        # Announce the next round — congratulation message first,
+        # then each word individually with pauses, then instruction.
+        intro, outro = self.prompt_selector.get_split(
             "success",
-            default=(
+            default_intro=(
                 "Correct! Moving to round {round_number}. "
-                "Score: {score}. Your words are. {numbered_sequence}."
+                "Score: {score}."
             ),
+            default_outro="Say them back to me.",
             round_number=self.game.current_round,
             score=self.game.score,
-            numbered_sequence=numbered,
         )
-        await self._say(prompt)
 
-        # Pause 3.5 seconds so the user has time to process the new
-        # words before transitioning to LISTEN mode.
-        await asyncio.sleep(3.5)
+        # 1. Congratulation + score
+        await self._say(intro)
+
+        # 2. Each word individually with pauses
+        await self._say_words_with_pauses(self.game.expected_sequence)
+
+        # 3. Instruction
+        if outro:
+            await self._say(outro)
+
+        # Pause 3 seconds before listening so the user has time
+        # to process the new words before their turn.
+        await asyncio.sleep(3.0)
 
         # Bot has finished speaking the next sequence — listen for user
         self.game.state = GameState.LISTEN
@@ -560,24 +568,31 @@ class MemoryGameProcessor(FrameProcessor):
             self.game.retries_remaining,
         )
 
-        # Select a retry prompt with the score breakdown
-        numbered = format_numbered_sequence(expected)
-        prompt = self.prompt_selector.get(
+        # Retry prompt: feedback first, then words individually, then instruction.
+        intro, outro = self.prompt_selector.get_split(
             "retry",
-            default=(
+            default_intro=(
                 "Good try! You got {correct_count} out of {total} correct. "
-                "Let's try again. {numbered_sequence}. "
-                "Repeat them back to me."
+                "Let's try again."
             ),
+            default_outro="Repeat them back to me.",
             correct_count=result["correct_count"],
             total=result["total"],
-            numbered_sequence=numbered,
         )
-        await self._say(prompt)
 
-        # Pause 3.5 seconds to let the user absorb the words before
-        # transitioning to LISTEN mode for their response.
-        await asyncio.sleep(3.5)
+        # 1. Feedback
+        await self._say(intro)
+
+        # 2. Each word individually with pauses
+        await self._say_words_with_pauses(expected)
+
+        # 3. Instruction
+        if outro:
+            await self._say(outro)
+
+        # Pause 3 seconds before listening so the user has time
+        # to process the words before their turn.
+        await asyncio.sleep(3.0)
 
         # Go back to listening for user response
         self.game.state = GameState.LISTEN
@@ -649,30 +664,36 @@ class MemoryGameProcessor(FrameProcessor):
     async def _announce_round(self) -> None:
         """Announce the current round and word sequence to the user.
 
-        Words are announced with numbered labels via the prompt template's
-        {numbered_sequence} placeholder, formatted as:
-            "Word 1: marble. Word 2: chocolate. Word 3: thunder"
-        Each word is its own sentence so TTS naturally adds pauses.
-
-        After announcing, a 3.5-second pause lets the user mentally
-        rehearse before the bot transitions to LISTEN mode.
+        Each word is spoken as a separate TextFrame with a 1-second
+        pause between them, giving the user time to hear and process
+        each word before the next one starts (addressing the "bot
+        stops immediately" issue). After all words, the user is
+        prompted to repeat them back, followed by a 3-second pause.
         """
-        numbered = format_numbered_sequence(self.game.expected_sequence)
-        prompt = self.prompt_selector.get(
+        # Get the intro and outro from the template (split on
+        # {numbered_sequence}) so we can insert individual word
+        # announcements with pauses between them.
+        intro, outro = self.prompt_selector.get_split(
             "round_intro",
-            default=(
-                "Round {round_number}. Here are your words. "
-                "{numbered_sequence}. "
-                "Now repeat them back to me."
-            ),
+            default_intro="Round {round_number}. Here are your words.",
+            default_outro="Now repeat them back to me.",
             round_number=self.game.current_round,
-            numbered_sequence=numbered,
         )
-        await self._say(prompt)
 
-        # Pause 3.5 seconds before listening so the user has time
+        # 1. Say the intro (e.g. "Round 1. Here are your words.")
+        await self._say(intro)
+
+        # 2. Say each word individually with a 1-second pause between
+        #    them so the user can hear and process each one clearly.
+        await self._say_words_with_pauses(self.game.expected_sequence)
+
+        # 3. Say the outro (e.g. "Now repeat them back to me.")
+        if outro:
+            await self._say(outro)
+
+        # Pause 3 seconds before listening so the user has time
         # to mentally process the words before their turn.
-        await asyncio.sleep(3.5)
+        await asyncio.sleep(3.0)
 
     async def _say(self, text: str) -> None:
         """Push a TextFrame with the bot's speech into the pipeline.
@@ -680,6 +701,22 @@ class MemoryGameProcessor(FrameProcessor):
         The TextFrame flows downstream to TTS -> audio output.
         """
         await self.push_frame(TextFrame(text))
+
+    async def _say_words_with_pauses(self, words: list[str]) -> None:
+        """Announce each word individually with a 1-second pause between them.
+
+        Instead of sending all words in one TextFrame (which makes TTS
+        speak them as a single continuous utterance), each word is sent
+        as its own TextFrame with a deliberate delay. This creates
+        audible pauses between words so the user can hear and process
+        each one before the next starts.
+
+        Args:
+            words: The word sequence to announce.
+        """
+        for i, word in enumerate(words):
+            await self._say(f"Word {i + 1}: {word}.")
+            await asyncio.sleep(1.0)
 
     async def _cancel_validate(self) -> None:
         """Cancel the pending timer-based validation task."""

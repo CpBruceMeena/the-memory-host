@@ -167,6 +167,50 @@ class PromptTemplateSelector:
             self.templates[category] = []
         self.templates[category].append(template)
 
+    def get_split(
+        self,
+        category: str,
+        default_intro: str = "",
+        default_outro: str = "",
+        **kwargs: str | int,
+    ) -> tuple[str, str]:
+        """Get a random template split on {numbered_sequence}.
+
+        Returns (intro, outro) — the parts before and after the
+        {numbered_sequence} placeholder. This allows the caller to
+        replace the word sequence with individually-spoken words.
+
+        Args:
+            category: Template category key (e.g. 'round_intro', 'success').
+            default_intro: Fallback text for the before-words part.
+            default_outro: Fallback text for the after-words part.
+            **kwargs: Format variables to fill into the template.
+                The {numbered_sequence} key is stripped from kwargs
+                since it's replaced by individual word announcements.
+
+        Returns:
+            (intro, outro) tuple. Either may be empty.
+        """
+        templates = self.templates.get(category)
+        if not templates:
+            return default_intro.format(**kwargs), default_outro.format(**kwargs)
+
+        template = random.choice(templates)
+
+        # Split on {numbered_sequence} to get intro and outro
+        parts = template.split("{numbered_sequence}")
+        intro = parts[0] if parts else ""
+        outro = parts[1] if len(parts) > 1 else ""
+
+        # Filter out numbered_sequence from kwargs since the placeholder
+        # has been removed by the split
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k != "numbered_sequence"}
+
+        intro = intro.format(**filtered_kwargs) if intro else (default_intro.format(**filtered_kwargs) if default_intro else "")
+        outro = outro.format(**filtered_kwargs) if outro else (default_outro.format(**filtered_kwargs) if default_outro else "")
+
+        return intro.strip(), outro.strip()
+
     def list_categories(self) -> list[str]:
         """Get all available template category names."""
         return list(self.templates.keys())

@@ -114,8 +114,8 @@ def compare_word_by_word(
 def format_numbered_sequence(words: list[str]) -> str:
     """Format a word sequence as numbered items for TTS.
 
-    Produces: "Word 1: marble. Word 2: chocolate. Word 3: thunder"
-    Each word is its own sentence, giving the TTS natural pauses.
+    Produces: "Word 1: marble. Word 2: chocolate. Word 3: thunder."
+    Each word is its own sentence, giving TTS a natural pause.
 
     Args:
         words: The word sequence to format.
@@ -124,7 +124,7 @@ def format_numbered_sequence(words: list[str]) -> str:
         A formatted string with numbered words.
     """
     parts = [f"Word {i + 1}: {word}" for i, word in enumerate(words)]
-    return ". ".join(parts)
+    return ". ".join(parts) + "."
 
 
 def _normalize_word(word: str) -> str:

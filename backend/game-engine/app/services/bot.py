@@ -23,13 +23,13 @@ import logging
 import uuid
 from typing import Any, Optional
 
+import aiohttp
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineTask
 from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.smallwebrtc.connection import (
     IceServer,
@@ -39,6 +39,7 @@ from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 
 from app.core.cache import GameCache, cache
 from app.core.config import settings
+from app.services.custom_tts import SlowerDeepgramTTSService
 from app.services.game_processor import MemoryGameProcessor
 from app.services.game_state import GameData
 from app.services.prompt_templates import PromptTemplateSelector
@@ -308,15 +309,17 @@ async def create_and_run_bot(
     )
 
     # ── TTS Service ─────────────────────────────────────────────
-    # Use aura-luna-en for a softer, slower voice that's easier
-    # to follow than the default aura-asteria-en.
-    # NOTE: Deepgram's standard TTS API does not support a speed
-    # parameter (that's only in the Voice Agent API), so speed
-    # control is achieved by choosing a naturally slower voice.
-    tts = DeepgramTTSService(
+    # Use SlowerDeepgramTTSService (HTTP-based) with speed=0.8 to
+    # make the bot speak 20% slower. The `speed` parameter requires
+    # an Aura 2 model (aura-2-*). First-gen Aura models like
+    # aura-luna-en don't support speed control.
+    http_session = aiohttp.ClientSession()
+    tts = SlowerDeepgramTTSService(
         api_key=api_key,
-        voice="aura-luna-en",  # Soft, slower voice — easier to follow
+        aiohttp_session=http_session,
+        voice="aura-2-luna-en",  # Aura 2 — supports speed parameter
         sample_rate=16000,
+        speed=0.9,
     )
 
     # ── Prompt Template Selector ─────────────────────────────────
@@ -379,6 +382,9 @@ async def create_and_run_bot(
             except asyncio.CancelledError:
                 pass
             await signaling.close()
+
+            # Close the aiohttp session to free connector resources
+            await http_session.close()
 
             # Commit any pending database changes
             try:
