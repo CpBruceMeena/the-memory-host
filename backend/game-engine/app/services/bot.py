@@ -317,7 +317,7 @@ async def create_and_run_bot(
     tts = SlowerDeepgramTTSService(
         api_key=api_key,
         aiohttp_session=http_session,
-        voice="aura-2-luna-en",  # Aura 2 — supports speed parameter
+        voice="aura-2-pandora-en",  # British English (closest available to Indian English)
         sample_rate=16000,
         speed=0.9,
     )

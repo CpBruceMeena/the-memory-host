@@ -74,7 +74,7 @@ class SlowerDeepgramTTSService(DeepgramHttpTTSService):
         logger.info(
             "SlowerDeepgramTTSService initialized — speed=%.1f (voice=%s)",
             self._speed,
-            voice or "aura-2-helena-en",
+            voice or "aura-2-pandora-en",
         )
         super().__init__(
             api_key=api_key,
