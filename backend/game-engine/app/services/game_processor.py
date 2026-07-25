@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from pipecat.frames.frames import (
@@ -28,7 +29,11 @@ from pipecat.frames.frames import (
     UserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+from sqlalchemy import select
 
+from app.core.cache import GameCache
+from app.models.round import Round
+from app.models.session import Session
 from app.services.game_logic import (
     compare_sequences,
     generate_sequence,
@@ -36,12 +41,10 @@ from app.services.game_logic import (
     parse_transcript_to_words,
 )
 from app.services.game_state import GameData, GameState
+from app.services.prompt_templates import PromptTemplateSelector
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-    from app.core.cache import GameCache
-    from app.services.prompt_templates import PromptTemplateSelector
 
 logger = logging.getLogger(__name__)
 
@@ -643,10 +646,6 @@ class MemoryGameProcessor(FrameProcessor):
         Checks the database if a response already exists for this
         session + round combination.
         """
-        from sqlalchemy import select
-
-        from app.models.round import Round
-
         if not self.game.session_id:
             return False
 
@@ -670,10 +669,6 @@ class MemoryGameProcessor(FrameProcessor):
 
         Also invalidates the leaderboard cache since scores changed.
         """
-        from datetime import datetime, timezone
-
-        from app.models.round import Round
-
         round_record = Round(
             session_id=self.game.session_id,
             round_number=round_number,
@@ -716,12 +711,6 @@ class MemoryGameProcessor(FrameProcessor):
 
     async def _end_session(self) -> None:
         """Update session status to completed in database and cache."""
-        from datetime import datetime, timezone
-
-        from sqlalchemy import select
-
-        from app.models.session import Session
-
         if not self.game.session_id:
             return
 

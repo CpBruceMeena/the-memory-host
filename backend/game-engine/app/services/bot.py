@@ -263,6 +263,13 @@ async def create_and_run_bot(
         ]
     )
 
+    # ── Game State ──────────────────────────────────────────────
+    game_data = GameData(
+        session_id=uuid.UUID(session_id),
+        player_name=player_name,
+        max_rounds=max_rounds,
+    )
+
     # ── Signaling Client ────────────────────────────────────────
     signaling = SignalingClient(
         server_url=signaling_url,
@@ -311,13 +318,6 @@ async def create_and_run_bot(
 
     # ── Prompt Template Selector ─────────────────────────────────
     prompt_selector = PromptTemplateSelector()
-
-    # ── Game State ──────────────────────────────────────────────
-    game_data = GameData(
-        session_id=uuid.UUID(session_id),
-        player_name=player_name,
-        max_rounds=max_rounds,
-    )
 
     # ── Get DB Session ──────────────────────────────────────────
     from app.db.database import async_session_factory

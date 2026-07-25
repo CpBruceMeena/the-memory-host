@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Integer, String, Text
+from sqlalchemy import DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -43,7 +43,7 @@ class Session(UUIDMixin, TimestampMixin, Base):
     )
 
     ended_at: Mapped[Optional[datetime]] = mapped_column(
-        nullable=True
+        DateTime(timezone=True), nullable=True
     )
 
     # Relationships

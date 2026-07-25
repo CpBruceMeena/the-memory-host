@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,7 +43,7 @@ class Round(UUIDMixin, TimestampMixin, Base):
     # NULL = pending, TRUE = correct, FALSE = wrong
 
     answered_at: Mapped[Optional[datetime]] = mapped_column(
-        nullable=True
+        DateTime(timezone=True), nullable=True
     )
 
     # Relationships
