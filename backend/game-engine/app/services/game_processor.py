@@ -755,6 +755,18 @@ class MemoryGameProcessor(FrameProcessor):
                 self.game.session_id,
             )
 
+        # Commit immediately so the REST API (running in a separate
+        # process with its own DB connection) can see the updated
+        # current_round value on the next frontend poll.
+        # Without this commit, PostgreSQL's READ COMMITTED isolation
+        # hides the change until the entire pipeline stops and the
+        # async with session context manager commits.
+        try:
+            await self.db.commit()
+        except Exception:
+            logger.warning("Failed to commit init round in db")
+            await self.db.rollback()
+
     async def _check_already_scored(self) -> bool:
         """Check if this round already has a response recorded.
 

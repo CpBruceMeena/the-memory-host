@@ -27,7 +27,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={inter.variable}>
-      <body className="min-h-screen bg-[#0f1117] text-[#e9ecef] antialiased">
+      <body
+        className="min-h-screen bg-[#0f1117] text-[#e9ecef] antialiased"
+        suppressHydrationWarning
+      >
         {/* Subtle background gradient */}
         <div className="fixed inset-0 pointer-events-none">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(92,124,250,0.08)_0%,_transparent_50%)]" />

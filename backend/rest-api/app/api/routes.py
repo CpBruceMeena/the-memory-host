@@ -22,6 +22,8 @@ from app.api.schemas import (
     HealthResponse,
     LeaderboardEntry,
     LeaderboardResponse,
+    RoundResponse,
+    RoundsListResponse,
     SessionResponse,
 )
 from app.core.config import settings
@@ -237,6 +239,45 @@ async def end_session(
 
 
 # ── Leaderboard ──────────────────────────────────────────────
+
+@router.get(
+    "/sessions/{session_id}/rounds",
+    response_model=RoundsListResponse,
+    tags=["Sessions"],
+    responses={
+        404: {"model": ErrorResponse},
+    },
+)
+async def get_session_rounds(
+    session_id: UUID,
+    db: DbSession,
+):
+    """Get all rounds for a game session.
+
+    Returns round history including expected sequences and user responses.
+    Used by the frontend to display round history in the GameLog.
+    """
+    result = await db.execute(
+        select(Round).where(
+            Round.session_id == session_id
+        ).order_by(
+            Round.round_number.asc()
+        )
+    )
+    rounds = result.scalars().all()
+
+    return RoundsListResponse(
+        rounds=[
+            RoundResponse(
+                round_number=r.round_number,
+                expected=r.word_sequence,
+                user_response=r.user_response,
+                is_correct=r.is_correct,
+            )
+            for r in rounds
+        ]
+    )
+
 
 @router.get(
     "/leaderboard",

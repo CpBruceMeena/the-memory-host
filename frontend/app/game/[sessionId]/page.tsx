@@ -1,13 +1,13 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { GameHeader } from "@/components/GameHeader";
-import { GameLog } from "@/components/GameLog";
 import { GameOverModal } from "@/components/GameOverModal";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";
+import { RoundHistory } from "@/components/RoundHistory";
 import { useGameState } from "@/hooks/useGameState";
 
 // SSR-safe dynamic import for the WebRTC component
@@ -21,6 +21,7 @@ const WebRTCRoom = dynamic(
 );
 
 export default function GamePage() {
+  const router = useRouter();
   const params = useParams();
   const sessionId = typeof params.sessionId === "string" ? params.sessionId : null;
 
@@ -116,6 +117,19 @@ export default function GamePage() {
   // Active game state
   const isGameOver = gameState.status !== "active";
 
+  // ── Auto-redirect to home after game over ─────────────────
+  // After 3 retries are exhausted, the game ends. Show the
+  // GameOverModal briefly, then redirect to home so the user
+  // can start a new game.
+  useEffect(() => {
+    if (isGameOver) {
+      const redirectTimer = setTimeout(() => {
+        router.push("/");
+      }, 5_000);
+      return () => clearTimeout(redirectTimer);
+    }
+  }, [isGameOver, router]);
+
   return (
     <div className="max-w-lg mx-auto px-4 pt-6 pb-24 space-y-6 animate-fade-in">
       {/* Game Header */}
@@ -133,11 +147,8 @@ export default function GamePage() {
         token={roomToken ?? ""}
       />
 
-      {/* Game Log */}
-      <GameLog
-        rounds={[]}
-        maxEntries={10}
-      />
+      {/* Round History */}
+      <RoundHistory sessionId={sessionId} />
 
       {/* Waiting indicator — shown when game hasn't started yet */}
       {!isGameOver && gameState.current_round === 0 && !showRetryPrompt && (

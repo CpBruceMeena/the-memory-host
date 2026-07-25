@@ -154,10 +154,35 @@ def parse_transcript_to_words(transcript_buffer: list[str]) -> list[str]:
 def get_words_for_round(round_number: int) -> int:
     """Get the number of words for a given round.
 
+    Progressive difficulty: starts with single words and gradually
+    increases. First 3 rounds ramp up quickly, then plateau and
+    slowly increase to a max of 7 words at level 10.
+
+    Round   1: 1 word
+    Round   2: 2 words
+    Round   3: 3 words
+    Rounds 4-5: 4 words
+    Rounds 6-7: 5 words
+    Rounds 8-9: 6 words
+    Round  10: 7 words
+
     Args:
-        round_number: 1-indexed round number.
+        round_number: 1-indexed round number (1-10).
 
     Returns:
         Number of words in the sequence for that round.
     """
-    return round_number + 2
+    if round_number <= 1:
+        return 1
+    elif round_number <= 2:
+        return 2
+    elif round_number <= 3:
+        return 3
+    elif round_number <= 5:
+        return 4
+    elif round_number <= 7:
+        return 5
+    elif round_number <= 9:
+        return 6
+    else:
+        return 7

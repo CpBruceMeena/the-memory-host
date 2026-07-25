@@ -308,17 +308,15 @@ async def create_and_run_bot(
     )
 
     # ── TTS Service ─────────────────────────────────────────────
-    # Use aura-luna-en (slower, softer) instead of aura-asteria-en
-    # (energetic, fast) so the bot's speech is easier to follow.
-    # speed=0.8 requests ~20% slower speaking rate for clearer
-    # enunciation. NOTE: The standard Deepgram TTS API may not
-    # support this param (only documented in Voice Agent API).
-    # If TTS fails to initialize, remove speed= from this call.
+    # Use aura-luna-en for a softer, slower voice that's easier
+    # to follow than the default aura-asteria-en.
+    # NOTE: Deepgram's standard TTS API does not support a speed
+    # parameter (that's only in the Voice Agent API), so speed
+    # control is achieved by choosing a naturally slower voice.
     tts = DeepgramTTSService(
         api_key=api_key,
         voice="aura-luna-en",  # Soft, slower voice — easier to follow
         sample_rate=16000,
-        speed=0.8,  # Slower speaking rate (0.7-1.5, 1.0=default)
     )
 
     # ── Prompt Template Selector ─────────────────────────────────

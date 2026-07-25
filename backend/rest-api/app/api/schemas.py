@@ -75,6 +75,23 @@ class HealthResponse(BaseModel):
     version: str = Field(..., description="API version")
 
 
+class RoundResponse(BaseModel):
+    """Response for a single round entry."""
+
+    round_number: int = Field(..., description="Round number (1-indexed)")
+    expected: list[str] = Field(..., description="Expected word sequence")
+    user_response: Optional[list[str]] = Field(None, description="User's spoken words")
+    is_correct: Optional[bool] = Field(None, description="True/False if answered, null if pending")
+
+
+class RoundsListResponse(BaseModel):
+    """Response for GET /api/sessions/{id}/rounds."""
+
+    rounds: list[RoundResponse] = Field(
+        default_factory=list, description="All rounds for this session"
+    )
+
+
 class ErrorResponse(BaseModel):
     """Standard error response."""
 
