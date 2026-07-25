@@ -94,6 +94,9 @@ class MemoryGameProcessor(FrameProcessor):
         # of silence (when VAD doesn't emit UserStoppedSpeakingFrame).
         self._validate_task: Any = None
         self._last_transcript_time: float = 0.0
+        # Polling task: checks user_done_event every 500ms to catch PTT
+        # release even when no TranscriptionFrames arrive.
+        self._poll_task: Any = None
 
         logger.info(
             "MemoryGameProcessor initialized (max_rounds=%d)", max_rounds
@@ -164,6 +167,10 @@ class MemoryGameProcessor(FrameProcessor):
             self.game.expected_sequence,
         )
 
+        # Clear any stale user_done_event from a previous session
+        if self.game.user_done_event:
+            self.game.user_done_event.clear()
+
         # Update cache immediately so the frontend's polling sees
         # current_round > 0 and doesn't show the 30-second timeout.
         await self._update_cache()
@@ -194,9 +201,14 @@ class MemoryGameProcessor(FrameProcessor):
         self.game.state = GameState.LISTEN
         logger.debug("Transitioned to LISTEN — awaiting user response")
 
+        # Start polling task that catches user_done_event even when no
+        # TranscriptionFrames arrive after the button is released.
+        self._poll_task = asyncio.create_task(self._poll_user_done())
+
     async def _on_end(self) -> None:
         """Handle session end — clean up game state."""
         await self._cancel_validate()
+        await self._cancel_poll()
         if self.game.state != GameState.ENDED:
             logger.info(
                 "Game ending — final state: %s, score: %d, round: %d",
@@ -262,12 +274,12 @@ class MemoryGameProcessor(FrameProcessor):
         Accumulates transcript text fragments while in LISTEN state.
         These are later parsed into a flat word list during validation.
 
-        Uses a two-layer approach to detect when the user has finished:
-        1. Inline threshold: if enough fragments accumulate (>= 5),
+        Uses a three-layer approach to detect when the user has finished:
+        1. Push-to-talk: user_done_event signals immediate validation
+           (most reliable — user explicitly indicates they're done).
+        2. Inline threshold: if enough fragments accumulate (>= 5),
            trigger validation directly (push_frame works here).
-        2. Timer fallback: 4-second silence window via background task.
-           If push_frame doesn't work from the task, game state still
-           updates silently (frontend picks it up via polling).
+        3. Timer fallback: 4-second silence window via background task.
         """
         if self.game.state == GameState.LISTEN:
             now = time.monotonic()
@@ -275,7 +287,6 @@ class MemoryGameProcessor(FrameProcessor):
             self._last_transcript_time = now
 
             self.game.user_transcript_buffer.append(frame.text)
-            # Log at INFO level so we can see transcripts in the app log
             logger.info(
                 "Transcript collected: '%s' (buffer size: %d, gap: %.1fs)",
                 frame.text,
@@ -283,16 +294,25 @@ class MemoryGameProcessor(FrameProcessor):
                 gap,
             )
 
-            # Reset the timer-based fallback on each transcript
-            if self._validate_task and not self._validate_task.done():
-                self._validate_task.cancel()
-            if not self.game.is_validating:
-                self._validate_task = asyncio.create_task(
-                    self._timer_validate()
-                )
+            # ── Layer 1: Push-to-talk signal ──────────────────────
+            # If the user released the hold-to-speak button, validate
+            # immediately with whatever transcripts we have.
+            if (
+                self.game.user_done_event
+                and self.game.user_done_event.is_set()
+            ):
+                self.game.user_done_event.clear()
+                if not self.game.is_validating and len(self.game.user_transcript_buffer) >= 1:
+                    logger.info(
+                        "User done signal — triggering validation with %d fragments",
+                        len(self.game.user_transcript_buffer),
+                    )
+                    await self._cancel_validate()
+                    self.game.state = GameState.VALIDATE
+                    await self._validate_response()
+                    return
 
-            # Inline threshold: if enough fragments have accumulated,
-            # trigger validation right now (reliable push_frame context).
+            # ── Layer 2: Inline threshold ─────────────────────────
             threshold = max(
                 MIN_TRANSCRIPT_THRESHOLD,
                 len(self.game.expected_sequence) + 2,
@@ -305,8 +325,18 @@ class MemoryGameProcessor(FrameProcessor):
                     "Transcript threshold reached (%d) — triggering validation",
                     len(self.game.user_transcript_buffer),
                 )
+                await self._cancel_validate()
                 self.game.state = GameState.VALIDATE
                 await self._validate_response()
+                return
+
+            # ── Layer 3: Timer fallback ───────────────────────────
+            # Reset the 4-second silence window on each new transcript
+            if not self.game.is_validating:
+                await self._cancel_validate()
+                self._validate_task = asyncio.create_task(
+                    self._timer_validate()
+                )
         else:
             logger.warning(
                 "Transcript received but not in LISTEN state (state=%s): '%s'",
@@ -542,6 +572,42 @@ class MemoryGameProcessor(FrameProcessor):
             except asyncio.CancelledError:
                 pass
         self._validate_task = None
+
+    async def _cancel_poll(self) -> None:
+        """Cancel the user_done polling task."""
+        if self._poll_task and not self._poll_task.done():
+            self._poll_task.cancel()
+            try:
+                await self._poll_task
+            except asyncio.CancelledError:
+                pass
+        self._poll_task = None
+
+    async def _poll_user_done(self) -> None:
+        """Poll user_done_event every 500ms. Catches PTT release even
+        when no TranscriptionFrames arrive after the button is released."""
+        try:
+            while True:
+                await asyncio.sleep(0.5)
+                if (
+                    self.game.user_done_event
+                    and self.game.user_done_event.is_set()
+                    and self.game.state == GameState.LISTEN
+                    and not self.game.is_validating
+                    and len(self.game.user_transcript_buffer) >= 1
+                ):
+                    self.game.user_done_event.clear()
+                    logger.info(
+                        "User done poll — triggering validation "
+                        "with %d fragments",
+                        len(self.game.user_transcript_buffer),
+                    )
+                    self.game.state = GameState.VALIDATE
+                    await self._validate_response()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Error in user_done poll task")
 
     async def _timer_validate(self) -> None:
         """Fallback: wait 4 seconds, then trigger validation.

@@ -63,10 +63,12 @@ class SignalingClient:
         server_url: str,
         room_name: str,
         webrtc_connection: SmallWebRTCConnection,
+        game_data: Any = None,
     ) -> None:
         self.server_url = server_url
         self.room_name = room_name
         self.webrtc_connection = webrtc_connection
+        self.game_data = game_data
         self._ws: Any = None
         self._connected = asyncio.Event()
         self._peer_connected = asyncio.Event()
@@ -172,6 +174,12 @@ class SignalingClient:
                 if candidate:
                     await self.webrtc_connection.add_ice_candidate(candidate)
 
+            elif msg_type == "user_done":
+                # Push-to-talk released — signal the game processor
+                logger.info("Received user_done signal — flagging for validation")
+                if self.game_data and hasattr(self.game_data, "user_done_event"):
+                    self.game_data.user_done_event.set()
+
             elif msg_type == "peer_disconnected":
                 logger.info("Peer disconnected from room")
                 break
@@ -260,6 +268,7 @@ async def create_and_run_bot(
         server_url=signaling_url,
         room_name=room_name,
         webrtc_connection=webrtc_connection,
+        game_data=game_data,
     )
 
     # Connect to signaling server and exchange SDP

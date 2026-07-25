@@ -23,10 +23,41 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const userTracksRef = useRef<MediaStreamTrack[]>([]);
   const [status, setStatus] = useState<
     "connecting" | "connected" | "error" | "disconnected"
   >("connecting");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isPTTActive, setIsPTTActive] = useState(false);
+
+  // Enable/disable microphone tracks for push-to-talk
+  const setMicEnabled = (enabled: boolean) => {
+    for (const track of userTracksRef.current) {
+      track.enabled = enabled;
+    }
+  };
+
+  // Send user-done signal via signaling WebSocket
+  const sendUserDone = () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "user_done" }));
+      console.log("Sent user_done signal");
+    }
+  };
+
+  // Push-to-talk handlers
+  const handlePTTStart = () => {
+    if (status !== "connected") return;
+    setIsPTTActive(true);
+    setMicEnabled(true);
+  };
+
+  const handlePTTEnd = () => {
+    if (!isPTTActive) return;
+    setIsPTTActive(false);
+    setMicEnabled(false);
+    sendUserDone();
+  };
 
   useEffect(() => {
     if (!roomUrl) return;
@@ -106,6 +137,9 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
         for (const track of userStream.getAudioTracks()) {
           pc.addTrack(track, userStream);
         }
+        // Store tracks for push-to-talk and start with mic DISABLED
+        userTracksRef.current = userStream.getAudioTracks();
+        setMicEnabled(false);
 
         // Log ICE connection state changes
         pc.oniceconnectionstatechange = () => {
@@ -265,14 +299,51 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
       )}
 
       {status === "connected" && (
-        <div className="text-center py-6">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-green-900/20 border border-green-800/30 text-sm text-green-400">
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            Connected — listening for voice
+        <div className="text-center">
+          {/* Push-to-Talk Button */}
+          <button
+            onMouseDown={handlePTTStart}
+            onMouseUp={handlePTTEnd}
+            onMouseLeave={handlePTTEnd}
+            onTouchStart={(e) => { e.preventDefault(); handlePTTStart(); }}
+            onTouchEnd={(e) => { e.preventDefault(); handlePTTEnd(); }}
+            className={`w-full py-5 rounded-2xl font-bold text-lg transition-all duration-150 select-none
+              ${
+                isPTTActive
+                  ? "bg-red-600/80 text-white scale-[0.98] shadow-lg shadow-red-600/20"
+                  : "bg-white/10 text-gray-300 hover:bg-white/15 active:scale-[0.98] border border-gray-700"
+              }
+            `}
+            style={{ touchAction: "manipulation" }}
+          >
+            {isPTTActive ? (
+              <span className="flex items-center justify-center gap-3">
+                <span className="w-3 h-3 rounded-full bg-white animate-pulse" />
+                Recording — release when done
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-3">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+                Hold to Speak
+              </span>
+            )}
+          </button>
+
+          <div className="mt-4 mb-2">
+            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-900/20 border border-green-800/30 text-xs text-green-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+              Connected
+            </span>
           </div>
-          <p className="text-xs text-gray-500 mt-3">
-            The Memory Host bot will speak through this connection.
-            Make sure your microphone is enabled.
+
+          <p className="text-xs text-gray-500">
+            Hold the button while speaking, release when done.
+            The bot will validate your answer after you release.
           </p>
         </div>
       )}

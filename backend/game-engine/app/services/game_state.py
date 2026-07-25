@@ -6,9 +6,10 @@ the MemoryGameProcessor.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 
 class GameState(str, Enum):
@@ -64,6 +65,11 @@ class GameData:
 
     # Used sequences cache (set of tuples for uniqueness)
     used_sequences: set[tuple[str, ...]] = field(default_factory=set)
+
+    # Push-to-talk signal: set by signaling client when user releases
+    # the hold-to-speak button. Checked by game_processor to trigger
+    # validation without waiting for VAD or transcript threshold.
+    user_done_event: Any = field(default_factory=asyncio.Event)
 
     def reset(self):
         """Reset game data for a new game (keeps session_id + player_name)."""

@@ -174,6 +174,15 @@ async def handle_connection(
                         {"type": "ice-candidate", "candidate": data.get("candidate")},
                     )
 
+            elif msg_type == "user_done":
+                # Push-to-talk release — relay to bot
+                logger.info(
+                    "User done in room '%s' — relaying to bot", room_name
+                )
+                other = room.get_other(ws)
+                if other:
+                    await safe_send(other, {"type": "user_done"})
+
             else:
                 logger.debug("Unknown message type '%s' from %s", msg_type, peer_kind)
 
