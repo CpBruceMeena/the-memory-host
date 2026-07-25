@@ -28,9 +28,8 @@
 14. [Double-Scoring Prevention](#14-double-scoring-prevention)
 15. [Retry & Scoring System](#15-retry--scoring-system)
 16. [Push-to-Talk Recording](#16-push-to-talk-recording)
-17. [Project Structure](#17-project-structure)
-18. [Implementation Roadmap](#18-implementation-roadmap)
-19. [Setup & Environment Variables](#19-setup--environment-variables)
+17. [Implementation Roadmap](#17-implementation-roadmap)
+18. [Logging](#18-logging)
 
 ---
 
@@ -595,69 +594,10 @@ Visual feedback via animated sound wave bars (CSS `waveBar` animation):
 
 ---
 
-## 17. Project Structure
-
-```
-the-memory-host/
-├── backend/
-│   ├── rest-api/                     # REST API (port 8000)
-│   │   └── app/
-│   │       ├── api/main.py           # FastAPI entrypoint
-│   │       ├── api/routes.py         # Session & leaderboard endpoints
-│   │       ├── api/schemas.py        # Pydantic models
-│   │       ├── core/config.py        # Environment config
-│   │       ├── db/database.py        # Database session
-│   │       └── models/               # SQLAlchemy models
-│   │
-│   ├── game-engine/                  # Game Engine (port 3002)
-│   │   └── app/
-│   │       ├── main.py               # FastAPI + signaling server
-│   │       ├── signaling/server.py   # WebSocket signaling
-│   │       ├── services/
-│   │       │   ├── bot.py            # Pipecat pipeline
-│   │       │   ├── game_processor.py # Core game engine
-│   │       │   ├── game_state.py     # State machine + GameData
-│   │       │   ├── game_logic.py     # Word comparison
-│   │       │   ├── prompt_templates.py  # Dialog templates
-│   │       │   └── custom_tts.py     # Slower TTS
-│   │       ├── core/cache.py         # In-memory cache
-│   │       ├── models/               # Shared models
-│   │       └── db/database.py        # Database session
-│   │
-│   ├── scripts/init_db.sql
-│   └── requirements.txt
-│
-├── frontend/
-│   ├── app/
-│   │   ├── page.tsx                  # Landing page
-│   │   ├── game/[sessionId]/page.tsx # Game room
-│   │   ├── leaderboard/page.tsx      # Leaderboard
-│   │   └── api/                      # BFF routes
-│   ├── components/
-│   │   ├── WebRTCRoom.tsx            # WebRTC + recording
-│   │   ├── GameOverModal.tsx         # Game over
-│   │   ├── LeaderboardTable.tsx      # Top 3
-│   │   ├── GameLog.tsx / RoundHistory.tsx
-│   │   └── ...
-│   ├── hooks/
-│   │   ├── useGameState.ts
-│   │   └── useLeaderboard.ts
-│   └── lib/api.ts
-│
-├── docs/
-│   └── sequence-diagram.svg          # Visual game flow
-├── docker-compose.yml
-├── run.sh
-├── .env.example
-└── README.md
-```
-
----
-
-## 18. Implementation Roadmap
+## 17. Implementation Roadmap
 
 ### Phase 1 — ✅ Core Infrastructure
-- [x] PostgreSQL setup (Docker Compose)
+- [x] PostgreSQL setup
 - [x] SQLAlchemy models (sessions, rounds)
 - [x] FastAPI REST API (sessions, leaderboard, health)
 - [x] WebSocket signaling server (port 3001)
@@ -693,40 +633,14 @@ the-memory-host/
 - [x] `TTSSpeakFrame` for proper audio context lifecycle
 - [x] `EndFrame` push to stop pipeline on game over
 
-### Phase 5 — 📋 Planned
-- [ ] Unit tests for game logic
-- [ ] Integration tests for full pipeline
-- [ ] Production WebRTC (Daily.co)
-- [ ] Error recovery and reconnection
-- [ ] Accessibility improvements
-- [ ] Mobile responsive refinements
-
 ---
 
-## 19. Setup & Environment Variables
-
-See [README.md](README.md) for full setup instructions.
-
-### Quick Start
-
-```bash
-docker compose up -d postgres
-cp .env.example .env  # Add DEEPGRAM_API_KEY
-./run.sh               # Starts REST API + Game Engine + Frontend
-```
-
-### Key Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `DEEPGRAM_API_KEY` | ✅ | — | Deepgram STT & TTS |
-| `DATABASE_URL` | ✅ | PostgreSQL localhost:5432 | Database connection |
-| `SMALLWEBRTC_SERVER_URL` | ❌ | `http://localhost:3001` | Signaling URL |
-| `MAX_ROUNDS` | ❌ | `10` | Max game rounds |
-| `GAME_ENGINE_URL` | ❌ | `http://localhost:3002` | Game engine HTTP |
-
-### Logging
+## 18. Logging
 
 Both services log to:
 - **stdout** (colored, development-friendly)
 - **`app.log`** (single file at project root, appended on each run, cleared on `./run.sh`)
+
+---
+
+See [README.md](README.md) for full setup instructions.

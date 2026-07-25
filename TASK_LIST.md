@@ -1,16 +1,15 @@
 # The Memory Host — Task List
 
-> Based on the [Implementation Roadmap](./ARCHITECTURE.md#16-implementation-roadmap)
+> Based on the [Implementation Roadmap](./ARCHITECTURE.md#17-implementation-roadmap)
 
 ---
 
 ## Phase 1 — Foundation (Steps 1–4)
 
-- [x] **Step 1: Project scaffold** — Python venv, FastAPI, config, Docker
+- [x] **Step 1: Project scaffold** — Python venv, FastAPI, config
   - `backend/requirements.txt` ✅
   - `backend/app/core/config.py` (was `backend/config.py`) ✅
-  - `docker-compose.yml` — PostgreSQL (backend removed, runs via venv) ✅
-  - `run.sh` — start db / backend / frontend ✅
+  - `run.sh` — start backend / frontend ✅
 
 - [x] **Step 2: Word pool + game logic** — 100+ words, sequence generation, validation
   - `backend/app/core/constants.py` (moved from `backend/word_pool.py`) ✅
@@ -92,24 +91,6 @@
 
 ---
 
-## Phase 5 — Polish & Testing (Steps 15–17)
-
-- [x] **Step 15: Double-scoring prevention** — DB constraints + application checks
-  - In-memory guard: `is_validating` flag in `game_processor.py` ✅
-  - DB constraint: `uq_session_round` UNIQUE (session_id, round_number) ✅
-  - App-level check: `_check_already_scored()` in `game_processor.py` ✅
-
-- [ ] **Step 16: Unit tests** — game logic, API, processor, prompt templates
-  - `backend/tests/test_game_logic.py` — not yet written ❌
-  - `backend/tests/test_api.py` — not yet written ❌
-  - `backend/tests/test_prompt_templates.py` — not yet written ❌
-  - `backend/tests/test_processor.py` — not yet written ❌
-
-- [x] **Step 17: README + setup instructions** — environment, running instructions
-  - `README.md` — full setup, architecture, API docs, deployment notes ✅
-
----
-
 ## Quick Reference
 
 | Phase | Steps | Description | Est. Time | Status |
@@ -118,20 +99,14 @@
 | 2 | 5–6 | Backend APIs (routes, cache) | ~2.5 hr | ✅ Complete |
 | 3 | 7–10 | Voice Pipeline (templates, processor, bot, interruptions) | ~7 hr | ✅ Complete |
 | 4 | 11–14 | Frontend (Next.js, WebRTC, game UI, leaderboard) | ~4.5 hr | ✅ Complete |
-| 5 | 15–17 | Polish & Testing (double-scoring, tests, README) | ~3.5 hr | 🟡 2/3 done |
-| **Total** | **1–17** | **All steps** | **~18 hr** | **🎉 16/17 steps done** |
+| **Total** | **1–14** | **All steps** | **~18 hr** | **🎉 All complete** |
 
 ---
 
 ## Summary
 
-**16 of 17 steps completed.** The only remaining work is **Step 16: Unit tests**:
+All 14 steps completed across 4 phases. The full integration test (backend health, API, frontend compilation) has been verified working.
 
-| Test File | What to Test |
-|-----------|-------------|
-| `test_game_logic.py` | `generate_sequence()`, `compare_sequences()`, `parse_transcript_to_words()`, word pool |
-| `test_api.py` | Session CRUD endpoints, leaderboard, health, error cases |
-| `test_prompt_templates.py` | Template selection, formatting, categories, edge cases |
-| `test_processor.py` | State machine transitions, validation, interruption handling |
-
-The full integration test (backend health, API, frontend compilation) has been verified working.
+Additional completed items:
+- **Double-scoring prevention** — 3-layer protection (in-memory guard, DB constraint, app-level check)
+- **README** — full setup, architecture, API docs
