@@ -49,10 +49,42 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
         pc.ontrack = (event) => {
           if (cancelled) return;
           if (event.track.kind === "audio" && audioRef.current) {
-            const stream = new MediaStream([event.track]);
-            audioRef.current.srcObject = stream;
+            const stream = audioRef.current.srcObject;
+            if (stream instanceof MediaStream) {
+              // Add new track to existing stream
+              stream.addTrack(event.track);
+            } else {
+              const newStream = new MediaStream([event.track]);
+              audioRef.current.srcObject = newStream;
+            }
             setStatus("connected");
           }
+        };
+
+        // Create a data channel so the bot's data channel can negotiate
+        // properly. Without this, the SDP offer won't include a data m=
+        // section, and the bot's data channel never opens.
+        const dc = pc.createDataChannel("game");
+
+        dc.onopen = () => console.log("Client data channel opened");
+        dc.onmessage = (event) => console.log("Client data channel message:", event.data);
+
+        // Listen for the bot's data channel (created by SmallWebRTCTransport
+        // on the bot side). The bot sends game state updates (round info,
+        // scores, status) through its own data channel, which fires this
+        // ondatachannel event on our peer connection.
+        pc.ondatachannel = (event) => {
+          const botChannel = event.channel;
+          console.log("Bot data channel received:", botChannel.label);
+          botChannel.onmessage = (msgEvent) => {
+            try {
+              const data = JSON.parse(msgEvent.data);
+              console.log("Bot app message:", data);
+            } catch {
+              console.log("Bot data channel message:", msgEvent.data);
+            }
+          };
+          botChannel.onopen = () => console.log("Bot data channel opened");
         };
 
         // First, create an explicit sendrecv transceiver so the SDP offer

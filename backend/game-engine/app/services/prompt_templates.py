@@ -35,7 +35,7 @@ class PromptTemplateSelector:
             "start": [
                 "Welcome to the Memory Host, {player_name}. I'm going to say a "
                 "sequence of words. Your job is to repeat them back to me exactly "
-                "as I said them. Ready? Let's begin.",
+                "as I said them. Listen carefully.",
                 "Hey there, {player_name}. Welcome to the memory challenge. "
                 "Listen carefully to each word I say, and then repeat them back "
                 "to me in the same order. Let's see how far you can go.",
