@@ -298,14 +298,12 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
         <div className="px-4 py-3 rounded-xl bg-red-900/20 border border-red-800/30 text-sm text-red-400">
           {errorMsg}
         </div>
-      )}
-
-      {status === "connected" && (
+      )}          {status === "connected" && (
         <div className="text-center">
           {/* Start / Stop Recording Button */}
           <button
             onClick={handleToggleRecording}
-            className={`w-full py-5 rounded-2xl font-bold text-lg transition-all duration-150 select-none
+            className={`w-full relative overflow-hidden rounded-2xl font-bold text-lg transition-all duration-150 select-none
               ${
                 isRecording
                   ? "bg-red-600/80 text-white scale-[0.98] shadow-lg shadow-red-600/20"
@@ -314,12 +312,27 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
             `}
           >
             {isRecording ? (
-              <span className="flex items-center justify-center gap-3">
-                <span className="w-3 h-3 rounded-full bg-white animate-pulse" />
-                Recording — tap Stop when done
+              <span className="flex flex-col items-center gap-3 py-2">
+                {/* Animated sound wave bars */}
+                <span className="flex items-end justify-center gap-[3px] h-8">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
+                    <span
+                      key={i}
+                      className="w-[3px] bg-white/90 rounded-full wave-bar"
+                      style={{
+                        animationDelay: `${i * 0.08}s`,
+                        height: "100%",
+                      }}
+                    />
+                  ))}
+                </span>
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+                  Recording — tap Stop when done
+                </span>
               </span>
             ) : (
-              <span className="flex items-center justify-center gap-3">
+              <span className="flex items-center justify-center gap-3 py-5">
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="12" r="6" />
                 </svg>
