@@ -20,7 +20,6 @@ A **voice-based memory card game** powered by [Pipecat](https://github.com/pipec
 
 - Python 3.14+
 - Node.js 20+
-- Docker (for PostgreSQL)
 - A [Deepgram API key](https://console.deepgram.com/) (free tier available)
 
 ### 1. Clone & Environment Setup
@@ -37,10 +36,7 @@ cp .env.example .env
 ### 2. Start Services
 
 ```bash
-# Start PostgreSQL
-docker compose up -d postgres
-
-# Start all services (rest-api + game-engine + frontend)
+# Start all services (REST API + Game Engine + Frontend)
 ./run.sh
 ```
 
@@ -92,84 +88,6 @@ Open `http://localhost:3000`, enter your name, and click **Start Game**.
     │                         │ TTS → WebRTC       │  │
     │                         └─────────────────────┘  │
     └───────────────────────────────────────────────────┘
-```
-
-### Project Structure
-
-```
-the-memory-host/
-├── backend/
-│   ├── rest-api/                     # REST API service (port 8000)
-│   │   ├── app/
-│   │   │   ├── api/
-│   │   │   │   ├── main.py           # FastAPI entrypoint
-│   │   │   │   ├── routes.py         # Session & leaderboard endpoints
-│   │   │   │   ├── deps.py           # Dependency injection (DB session)
-│   │   │   │   └── schemas.py        # Pydantic request/response models
-│   │   │   ├── core/
-│   │   │   │   ├── config.py         # Environment config
-│   │   │   │   └── constants.py      # Application constants
-│   │   │   ├── models/
-│   │   │   │   ├── base.py           # SQLAlchemy Base + mixins
-│   │   │   │   ├── session.py        # Session model
-│   │   │   │   └── round.py          # Round model
-│   │   │   └── db/
-│   │   │       └── database.py       # AsyncSession + engine
-│   │   └── requirements.txt
-│   │
-│   ├── game-engine/                  # Game Engine service (port 3002)
-│   │   ├── app/
-│   │   │   ├── main.py               # FastAPI entrypoint + signaling (port 3001)
-│   │   │   ├── signaling/
-│   │   │   │   └── server.py         # WebSocket signaling server
-│   │   │   ├── services/
-│   │   │   │   ├── bot.py            # Pipecat pipeline assembly + CLI
-│   │   │   │   ├── game_processor.py # Pipecat FrameProcessor (game engine)
-│   │   │   │   ├── game_state.py     # State machine enum + GameData dataclass
-│   │   │   │   ├── game_logic.py     # Sequence generation, word-by-word comparison
-│   │   │   │   ├── prompt_templates.py  # Categorized dialog templates
-│   │   │   │   └── custom_tts.py     # Slower TTSService with speed control
-│   │   │   ├── models/               # Shared SQLAlchemy models
-│   │   │   ├── core/                 # Cache, config
-│   │   │   └── db/                   # Database session
-│   │   └── requirements.txt
-│   │
-│   ├── scripts/
-│   │   └── init_db.sql               # Database schema
-│   └── requirements.txt
-│
-├── frontend/                         # Next.js 15 (App Router)
-│   ├── app/
-│   │   ├── page.tsx                  # Landing page (start game)
-│   │   ├── layout.tsx                # Root layout + nav
-│   │   ├── loading.tsx               # Loading state
-│   │   ├── globals.css               # Tailwind + custom styles
-│   │   ├── game/[sessionId]/         # Game room page
-│   │   ├── leaderboard/              # Leaderboard page
-│   │   └── api/                      # BFF API routes
-│   ├── components/
-│   │   ├── GameHeader.tsx            # Score + round + status
-│   │   ├── WebRTCRoom.tsx            # WebRTC audio + recording controls
-│   │   ├── GameLog.tsx               # Round history
-│   │   ├── RoundHistory.tsx          # Polling round history fetcher
-│   │   ├── GameOverModal.tsx         # End-game stats + replay
-│   │   ├── LeaderboardTable.tsx      # Top 3 ranked sessions
-│   │   ├── PlayerNameForm.tsx        # Name input form
-│   │   └── LoadingSkeleton.tsx       # Loading states
-│   ├── hooks/
-│   │   ├── useGameState.ts           # Polling hook (2s interval)
-│   │   └── useLeaderboard.ts         # Fetch + auto-refresh
-│   └── lib/
-│       └── api.ts                    # API client (server-side)
-│
-├── docs/
-│   └── sequence-diagram.svg          # Game flow sequence diagram
-├── scripts/
-│   └── init_db.sql
-├── docker-compose.yml                # PostgreSQL only
-├── run.sh                            # Start all services
-├── .env.example
-└── pyproject.toml
 ```
 
 ---
@@ -253,37 +171,6 @@ IDLE → START_GAME → SPEAK_SEQUENCE → LISTEN → VALIDATE
 
 ---
 
-## Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `DEEPGRAM_API_KEY` | ✅ | — | Deepgram API key for STT (Nova-2) & TTS (Aura 2) |
-| `DATABASE_URL` | ✅ | `postgresql+asyncpg://postgres:password@localhost:5432/the-memory-host` | PostgreSQL connection |
-| `SMALLWEBRTC_SERVER_URL` | ❌ | `http://localhost:3001` | WebRTC signaling server |
-| `BOT_NAME` | ❌ | `Memory Game Host` | Bot display name |
-| `MAX_ROUNDS` | ❌ | `10` | Maximum game rounds |
-| `LOG_LEVEL` | ❌ | `INFO` | Logging level |
-| `GAME_ENGINE_URL` | ❌ | `http://localhost:3002` | Game engine URL (REST API → Game Engine) |
-
----
-
-## Configuration Reference
-
-### Cache Settings (`backend/rest-api/app/core/config.py`)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CACHE_ACTIVE_SESSION_TTL` | `1800` | Session cache TTL (30 min) |
-| `CACHE_MAX_ACTIVE_SESSIONS` | `100` | Max cached sessions |
-| `CACHE_LEADERBOARD_TTL` | `60` | Leaderboard cache TTL (1 min) |
-| `CACHE_ROUND_TTL` | `1800` | Round state cache TTL (30 min) |
-
-### TTS Voice (`backend/game-engine/app/services/bot.py`)
-
-Currently using **`aura-2-pandora-en`** (British English, feminine) — the closest available accent to Indian English in Deepgram's Aura 2 lineup. Speed is set to **0.9** (10% slower).
-
----
-
 ## Running the Project
 
 ```bash
@@ -296,14 +183,12 @@ Currently using **`aura-2-pandora-en`** (British English, feminine) — the clos
 ./run.sh frontend       # Port 3000
 ```
 
-Logs are written to both stdout and `app.log` at the project root.
-
 ---
 
 ## Tech Stack
 
 | Component | Technology |
-|-----------|-----------|
+|--------|--------|
 | Voice Pipeline | [Pipecat](https://github.com/pipecat-ai/pipecat) |
 | WebRTC | SmallWebRTC (built into Pipecat) |
 | STT | [Deepgram](https://deepgram.com) Nova-2 |
