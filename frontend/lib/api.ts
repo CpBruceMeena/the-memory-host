@@ -52,6 +52,17 @@ export interface LeaderboardResponse {
   leaderboard: LeaderboardEntry[];
 }
 
+export interface RoundResponse {
+  round_number: number;
+  expected: string[];
+  user_response: string[] | null;
+  is_correct: boolean | null;
+}
+
+export interface RoundsListResponse {
+  rounds: RoundResponse[];
+}
+
 export interface HealthResponse {
   status: string;
   version: string;
@@ -130,6 +141,24 @@ export async function getSession(
   const res = await fetchWithTimeout(`${BACKEND_URL}/api/sessions/${sessionId}`, {
     next: { revalidate: 0 }, // Never cache — always fetch fresh
   });
+
+  if (!res.ok) {
+    throw new Error(await extractError(res));
+  }
+
+  return res.json();
+}
+
+/**
+ * Get all rounds for a game session.
+ */
+export async function getSessionRounds(
+  sessionId: string
+): Promise<RoundsListResponse> {
+  const res = await fetchWithTimeout(
+    `${BACKEND_URL}/api/sessions/${sessionId}/rounds`,
+    { next: { revalidate: 0 } }
+  );
 
   if (!res.ok) {
     throw new Error(await extractError(res));

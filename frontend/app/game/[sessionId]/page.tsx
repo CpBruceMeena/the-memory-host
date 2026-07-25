@@ -38,7 +38,7 @@ export default function GamePage() {
 
   const { gameState, isLoading, error } = useGameState(sessionId, 2000);
 
-w  // Compute isGameOver early (before any early returns) so the
+  // Compute isGameOver early (before any early returns) so the
   // auto-redirect useEffect below is always called in the same
   // hook order, regardless of which render path is taken.
   const isGameOver = gameState ? gameState.status !== "active" : false;
