@@ -7,6 +7,14 @@ interface WebRTCRoomProps {
   roomUrl: string;
   /** Room access token. */
   token: string;
+  /**
+   * Called once when the bot finishes speaking its final turn.
+   * The RTVI bot-stopped-speaking event fires through the WebRTC
+   * data channel after Pipecat's TTS has finished generating and
+   * playing all audio. Used by the parent to show the Game Over
+   * modal at the right time (after the bot says the final message).
+   */
+  onBotFinishedSpeaking?: () => void;
 }
 
 /**
@@ -19,7 +27,7 @@ interface WebRTCRoomProps {
  *
  * For production, replace with the Daily.co client (@daily-co/daily-js).
  */
-export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
+export function WebRTCRoom({ roomUrl, token, onBotFinishedSpeaking }: WebRTCRoomProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -100,7 +108,22 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
         const dc = pc.createDataChannel("game");
 
         dc.onopen = () => console.log("Client data channel opened");
-        dc.onmessage = (event) => console.log("Client data channel message:", event.data);
+        dc.onmessage = (event) => {
+          console.log("Client data channel message:", event.data);
+          try {
+            const data = JSON.parse(event.data);
+            // Pipecat sends RTVI bot-stopped-speaking through the data
+            // channel when its TTS finishes playing all audio. This is
+            // the signal that the bot has finished speaking the game
+            // over message and it's safe to show the Game Over modal.
+            if (data?.type === "bot-stopped-speaking") {
+              console.log("Bot finished speaking — firing onBotFinishedSpeaking");
+              onBotFinishedSpeaking?.();
+            }
+          } catch {
+            // Non-JSON message — ignore
+          }
+        };
 
         // Listen for the bot's data channel (created by SmallWebRTCTransport
         // on the bot side). The bot sends game state updates (round info,
@@ -113,6 +136,11 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
             try {
               const data = JSON.parse(msgEvent.data);
               console.log("Bot app message:", data);
+              // Also check bot-stopped-speaking on the bot's channel
+              if (data?.type === "bot-stopped-speaking") {
+                console.log("Bot finished speaking (bot channel) — firing onBotFinishedSpeaking");
+                onBotFinishedSpeaking?.();
+              }
             } catch {
               console.log("Bot data channel message:", msgEvent.data);
             }

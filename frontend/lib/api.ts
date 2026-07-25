@@ -42,10 +42,10 @@ export interface EndSessionRequest {
 
 export interface LeaderboardEntry {
   player_name: string;
-  best_score: number;
-  best_round: number;
-  games_played: number;
-  last_played: string;
+  score: number;
+  current_round: number;
+  session_id: string;
+  created_at: string;
 }
 
 export interface LeaderboardResponse {

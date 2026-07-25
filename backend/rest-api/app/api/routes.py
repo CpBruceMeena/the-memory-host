@@ -294,31 +294,41 @@ async def get_leaderboard(
 ):
     """Get the top scores leaderboard.
 
-    Queries database directly (no cache) for fresh results.
+    Shows the top 3 highest-scoring individual sessions, regardless of
+    whether the same player has multiple entries. Each session is its own
+    row in the leaderboard.
+
+    Includes completed AND interrupted sessions that have a score,
+    so scores are not lost if the session didn't end cleanly.
     """
-    # Query from database
+    # Query individual sessions ordered by score descending
     result = await db.execute(
-        select(Session).where(
-            Session.status == "completed"
+        select(
+            Session.id.label("session_id"),
+            Session.player_name,
+            Session.score,
+            Session.current_round,
+            Session.created_at,
+        ).where(
+            Session.status.in_(["completed", "interrupted"]),
+            Session.score > 0,
         ).order_by(
             Session.score.desc(),
             Session.current_round.desc(),
-        ).limit(20)
+            Session.created_at.asc(),
+        ).limit(3)
     )
-    sessions = result.scalars().all()
+    rows = result.all()
 
-    # Show each completed session as its own leaderboard entry
-    # (not grouped by player_name), so every individual game result
-    # is visible. Sorted by score descending, then round descending.
     leaderboard_data = [
         {
-            "player_name": s.player_name,
-            "best_score": s.score,
-            "best_round": s.current_round,
-            "games_played": 1,
-            "last_played": s.created_at,
+            "session_id": str(row.session_id),
+            "player_name": row.player_name,
+            "score": row.score,
+            "current_round": row.current_round,
+            "created_at": row.created_at,
         }
-        for s in sessions
+        for row in rows
     ]
 
     return LeaderboardResponse(leaderboard=leaderboard_data)

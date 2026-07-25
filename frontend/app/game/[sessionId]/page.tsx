@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { GameHeader } from "@/components/GameHeader";
@@ -21,7 +21,6 @@ const WebRTCRoom = dynamic(
 );
 
 export default function GamePage() {
-  const router = useRouter();
   const params = useParams();
   const sessionId = typeof params.sessionId === "string" ? params.sessionId : null;
 
@@ -39,22 +38,30 @@ export default function GamePage() {
   const { gameState, isLoading, error } = useGameState(sessionId, 2000);
 
   // Compute isGameOver early (before any early returns) so the
-  // auto-redirect useEffect below is always called in the same
-  // hook order, regardless of which render path is taken.
+  // uses below are always called in the same hook order.
   const isGameOver = gameState ? gameState.status !== "active" : false;
 
-  // ── Auto-redirect to home after game over ─────────────────
-  // After 3 retries are exhausted, the game ends. Show the
-  // GameOverModal briefly, then redirect to home so the user
-  // can start a new game.
+  // ── Event-driven Game Over ─────────────────────────────────
+  // Pipecat sends a `bot-stopped-speaking` RTVI event through the
+  // WebRTC data channel when its TTS finishes playing all audio.
+  // We wait for BOTH conditions before showing the Game Over modal:
+  //   1. isGameOver (from polling — DB status changed to completed)
+  //   2. botStoppedSpeaking (from data channel — TTS audio finished)
+  // This ensures the modal only appears AFTER the voicebot has
+  // finished speaking the game over message.
+  const [botStoppedSpeaking, setBotStoppedSpeaking] = useState(false);
+  const showGameOver = isGameOver && botStoppedSpeaking;
+
+  // Reset botStoppedSpeaking when a new game starts
   useEffect(() => {
-    if (isGameOver) {
-      const redirectTimer = setTimeout(() => {
-        router.push("/");
-      }, 5_000);
-      return () => clearTimeout(redirectTimer);
+    if (!isGameOver) {
+      setBotStoppedSpeaking(false);
     }
-  }, [isGameOver, router]);
+  }, [isGameOver]);
+
+  const handleBotFinishedSpeaking = () => {
+    setBotStoppedSpeaking(true);
+  };
 
   // ── Game-start waiting state ──────────────────────────────
   // If the game loads but current_round stays 0 for a very long
@@ -147,6 +154,7 @@ export default function GamePage() {
       <WebRTCRoom
         roomUrl={roomUrl ?? ""}
         token={roomToken ?? ""}
+        onBotFinishedSpeaking={handleBotFinishedSpeaking}
       />
 
       {/* Round History */}
@@ -203,9 +211,10 @@ export default function GamePage() {
         </div>
       )}
 
-      {/* Game Over Modal */}
+      {/* Game Over Modal — shown after a 10s delay so the
+          voicebot finishes speaking the game over message first. */}
       <GameOverModal
-        isOpen={isGameOver}
+        isOpen={showGameOver}
         score={gameState.score}
         roundsPassed={gameState.current_round}
         totalRounds={gameState.total_rounds}

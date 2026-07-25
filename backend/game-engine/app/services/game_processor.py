@@ -655,6 +655,11 @@ class MemoryGameProcessor(FrameProcessor):
         # End the session
         await self._end_session()
 
+        # Stop the pipeline cleanly — EndFrame is queued after the
+        # final TTS message, allowing it to finish naturally before
+        # the pipeline shuts down.
+        await self.push_frame(EndFrame())
+
     async def _on_game_won(self) -> None:
         """Handle game won — all rounds completed successfully."""
         self.game.state = GameState.GAME_OVER
@@ -680,6 +685,11 @@ class MemoryGameProcessor(FrameProcessor):
 
         # End the session
         await self._end_session()
+
+        # Stop the pipeline cleanly — EndFrame is queued after the
+        # final TTS message, allowing it to finish naturally before
+        # the pipeline shuts down.
+        await self.push_frame(EndFrame())
 
     # ── Helper Methods ─────────────────────────────────────────
 
