@@ -501,6 +501,10 @@ class MemoryGameProcessor(FrameProcessor):
         )
         await self._say(prompt)
 
+        # Pause 3.5 seconds so the user has time to process the new
+        # words before transitioning to LISTEN mode.
+        await asyncio.sleep(3.5)
+
         # Bot has finished speaking the next sequence — listen for user
         self.game.state = GameState.LISTEN
 
@@ -541,6 +545,10 @@ class MemoryGameProcessor(FrameProcessor):
             numbered_sequence=numbered,
         )
         await self._say(prompt)
+
+        # Pause 3.5 seconds to let the user absorb the words before
+        # transitioning to LISTEN mode for their response.
+        await asyncio.sleep(3.5)
 
         # Go back to listening for user response
         self.game.state = GameState.LISTEN
@@ -616,6 +624,9 @@ class MemoryGameProcessor(FrameProcessor):
         {numbered_sequence} placeholder, formatted as:
             "Word 1: marble. Word 2: chocolate. Word 3: thunder"
         Each word is its own sentence so TTS naturally adds pauses.
+
+        After announcing, a 3.5-second pause lets the user mentally
+        rehearse before the bot transitions to LISTEN mode.
         """
         numbered = format_numbered_sequence(self.game.expected_sequence)
         prompt = self.prompt_selector.get(
@@ -629,6 +640,10 @@ class MemoryGameProcessor(FrameProcessor):
             numbered_sequence=numbered,
         )
         await self._say(prompt)
+
+        # Pause 3.5 seconds before listening so the user has time
+        # to mentally process the words before their turn.
+        await asyncio.sleep(3.5)
 
     async def _say(self, text: str) -> None:
         """Push a TextFrame with the bot's speech into the pipeline.
