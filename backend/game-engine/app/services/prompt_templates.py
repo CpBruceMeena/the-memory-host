@@ -62,14 +62,18 @@ class PromptTemplateSelector:
             "success": [
                 "That's correct! You've got a great memory. Let's move to round "
                 "{round_number}. Your score is now {score}. "
-                "Here's your next sequence. {numbered_sequence}.",
+                "Here's your next sequence. {numbered_sequence}. "
+                "Now repeat them back to me.",
                 "Perfect! You nailed it. On to round {round_number}. "
-                "Score: {score}. Listen up. {numbered_sequence}.",
+                "Score: {score}. Listen up. {numbered_sequence}. "
+                "Go ahead and repeat that back.",
                 "Absolutely right! You're on fire. Round {round_number} coming up. "
-                "Score: {score}. Your words are. {numbered_sequence}.",
+                "Score: {score}. Your words are. {numbered_sequence}. "
+                "Say them back whenever you're ready.",
                 "Correct! Excellent memory. Let's see how you do in round "
                 "{round_number}. Current score: {score}. "
-                "Here's your new sequence. {numbered_sequence}.",
+                "Here's your new sequence. {numbered_sequence}. "
+                "Take your time and repeat them back.",
             ],
             # ── Failure / Wrong Answer ─────────────────────────────
             # Used when retries are exhausted — final game over

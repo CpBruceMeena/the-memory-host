@@ -413,8 +413,14 @@ class MemoryGameProcessor(FrameProcessor):
                     user_response=user_words,
                     is_correct=True,
                 )
-                await self._update_cache()
                 await self._on_round_pass(user_words, result)
+
+                # Update cache AND database AFTER _on_round_pass adds the
+                # score and advances the round number. This ensures the
+                # REST API (separate process, separate cache) can read the
+                # updated score on the next frontend poll.
+                await self._update_cache()
+                await self._update_db_session()
             elif self.game.retries_remaining > 0:
                 # === PARTIAL: retry the same round ===
                 # Track the best attempt across all retries so we
@@ -455,6 +461,7 @@ class MemoryGameProcessor(FrameProcessor):
                     self.game.score += self.game.best_retry_count
 
                 await self._update_cache()
+                await self._update_db_session()
                 await self._on_game_over(user_words, expected)
 
         except Exception:
@@ -787,6 +794,45 @@ class MemoryGameProcessor(FrameProcessor):
             await self.db.commit()
         except Exception:
             logger.warning("Failed to commit init round in db")
+            await self.db.rollback()
+
+    async def _update_db_session(self) -> None:
+        """Write current score and round number to the database.
+
+        Called after each successful round pass so the REST API
+        (separate process, separate cache) can read the updated
+        score and round on the next frontend poll. Without this,
+        the score stays at 0 in the DB until _end_session commits.
+        """
+        if not self.game.session_id:
+            return
+
+        try:
+            result = await self.db.execute(
+                select(Session).where(Session.id == self.game.session_id)
+            )
+            db_session = result.scalar_one_or_none()
+            if db_session:
+                db_session.score = self.game.score
+                db_session.current_round = self.game.current_round
+                await self.db.flush()
+                logger.debug(
+                    "Updated db session %s score=%d round=%d",
+                    self.game.session_id,
+                    self.game.score,
+                    self.game.current_round,
+                )
+        except Exception:
+            logger.warning(
+                "Failed to update db session for %s",
+                self.game.session_id,
+            )
+
+        # Commit so the REST API sees the change immediately
+        try:
+            await self.db.commit()
+        except Exception:
+            logger.warning("Failed to commit db session update")
             await self.db.rollback()
 
     async def _check_already_scored(self) -> bool:
