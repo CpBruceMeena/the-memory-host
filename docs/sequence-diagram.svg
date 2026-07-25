@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1100" font-family="'Inter', system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5c7cfa"/>
+      <stop offset="100%" stop-color="#4c6ef5"/>
+    </linearGradient>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f1117"/>
+      <stop offset="100%" stop-color="#1a1d27"/>
+    </linearGradient>
+    <linearGradient id="successGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#20c997"/>
+      <stop offset="100%" stop-color="#109e6b"/>
+    </linearGradient>
+    <linearGradient id="failGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6b6b"/>
+      <stop offset="100%" stop-color="#ee3b3b"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="1100" fill="url(#bgGrad)" rx="12"/>
+
+  <!-- Title -->
+  <text x="450" y="42" text-anchor="middle" fill="url(#brandGrad)" font-size="20" font-weight="bold">The Memory Host — Sequence Diagram</text>
+  <text x="450" y="64" text-anchor="middle" fill="#6c757d" font-size="12">Game Flow: User joins → Plays rounds → Game Over</text>
+
+  <!-- Participant labels -->
+  <rect x="40" y="90" width="160" height="36" rx="18" fill="rgba(92,124,250,0.15)" stroke="#5c7cfa" stroke-width="1.5"/>
+  <text x="120" y="113" text-anchor="middle" fill="#5c7cfa" font-size="13" font-weight="600">Browser (Frontend)</text>
+  <line x1="120" y1="126" x2="120" y2="1060" stroke="#5c7cfa" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.4"/>
+
+  <rect x="340" y="90" width="160" height="36" rx="18" fill="rgba(255,146,43,0.15)" stroke="#ff922b" stroke-width="1.5"/>
+  <text x="420" y="113" text-anchor="middle" fill="#ff922b" font-size="13" font-weight="600">FastAPI Backend</text>
+  <line x1="420" y1="126" x2="420" y2="1060" stroke="#ff922b" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.4"/>
+
+  <rect x="640" y="90" width="200" height="36" rx="18" fill="rgba(32,201,151,0.15)" stroke="#20c997" stroke-width="1.5"/>
+  <text x="740" y="113" text-anchor="middle" fill="#20c997" font-size="13" font-weight="600">Pipecat Voice Bot</text>
+  <line x1="740" y1="126" x2="740" y2="1060" stroke="#20c997" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.4"/>
+
+  <!-- Step 1: Create Session -->
+  <line x1="200" y1="155" x2="340" y2="155" stroke="#5c7cfa" stroke-width="2" marker-end="url(#arrowRight)"/>
+  <rect x="215" y="143" width="110" height="24" rx="4" fill="rgba(92,124,250,0.1)"/>
+  <text x="270" y="159" text-anchor="middle" fill="#5c7cfa" font-size="11">POST /sessions</text>
+  <text x="420" y="175" text-anchor="middle" fill="#6c757d" font-size="10">Create DB record, start bot</text>
+
+  <!-- Step 2: Backend → Bot -->
+  <line x1="500" y1="200" x2="640" y2="200" stroke="#ff922b" stroke-width="2" stroke-dasharray="6,3"/>
+  <rect x="515" y="188" width="110" height="24" rx="4" fill="rgba(255,146,43,0.1)"/>
+  <text x="570" y="204" text-anchor="middle" fill="#ff922b" font-size="11">Start session</text>
+
+  <!-- Step 3: Bot → Signaling -->
+  <line x1="740" y1="230" x2="740" y2="270" stroke="#20c997" stroke-width="1.5"/>
+  <text x="750" y="250" text-anchor="start" fill="#20c997" font-size="10">Connect to signaling server</text>
+
+  <!-- Step 4: Backend → Browser (Session created) -->
+  <line x1="340" y1="300" x2="200" y2="300" stroke="#ff922b" stroke-width="2"/>
+  <rect x="215" y="288" width="110" height="24" rx="4" fill="rgba(255,146,43,0.1)"/>
+  <text x="270" y="304" text-anchor="middle" fill="#ff922b" font-size="11">201 + room URL</text>
+
+  <!-- Step 5: WebRTC connect -->
+  <path d="M 200 340 Q 460 370 740 340" stroke="#5c7cfa" stroke-width="1.5" stroke-dasharray="6,3" fill="none"/>
+  <text x="460" y="358" text-anchor="middle" fill="#5c7cfa" font-size="10">WebRTC: SDP offer/answer + ICE candidates</text>
+
+  <!-- Step 6: Bot starts game -->
+  <rect x="650" y="380" width="180" height="50" rx="8" fill="rgba(32,201,151,0.1)" stroke="#20c997" stroke-width="1"/>
+  <text x="740" y="400" text-anchor="middle" fill="#20c997" font-size="11" font-weight="600">Game Start</text>
+  <text x="740" y="416" text-anchor="middle" fill="#adb5bd" font-size="9">Generate word sequence</text>
+  <text x="740" y="428" text-anchor="middle" fill="#adb5bd" font-size="9">Set state → SPEAK_SEQUENCE</text>
+
+  <!-- Step 7: Bot speaks welcome -->
+  <line x1="740" y1="435" x2="200" y2="435" stroke="#20c997" stroke-width="2"/>
+  <text x="210" y="425" text-anchor="start" fill="#20c997" font-size="10">🔊 TTS: "Welcome to The Memory Host..."</text>
+
+  <!-- Step 8: Bot speaks words -->
+  <line x1="740" y1="465" x2="200" y2="465" stroke="#20c997" stroke-width="2"/>
+  <text x="210" y="455" text-anchor="start" fill="#20c997" font-size="10">🔊 TTS: "Word 1: apple. Word 2: banana."</text>
+
+  <!-- Step 9: Transition to LISTEN -->
+  <rect x="650" y="490" width="180" height="36" rx="8" fill="rgba(32,201,151,0.08)" stroke="#20c997" stroke-width="0.8"/>
+  <text x="740" y="508" text-anchor="middle" fill="#20c997" font-size="11">Set state → LISTEN</text>
+  <text x="740" y="522" text-anchor="middle" fill="#adb5bd" font-size="9">Waiting for user speech...</text>
+
+  <!-- Step 10: User records -->
+  <line x1="200" y1="550" x2="740" y2="550" stroke="#5c7cfa" stroke-width="2"/>
+  <text x="210" y="540" text-anchor="start" fill="#5c7cfa" font-size="10">🎤 User starts recording → speaks words</text>
+
+  <!-- Step 11: STT -->
+  <rect x="650" y="575" width="180" height="36" rx="8" fill="rgba(32,201,151,0.08)" stroke="#20c997" stroke-width="0.8"/>
+  <text x="740" y="593" text-anchor="middle" fill="#20c997" font-size="11">Deepgram STT → text</text>
+  <text x="740" y="607" text-anchor="middle" fill="#adb5bd" font-size="9">TranscriptionFrame</text>
+
+  <!-- Step 12: User stops recording -->
+  <line x1="200" y1="635" x2="740" y2="635" stroke="#5c7cfa" stroke-width="2"/>
+  <text x="210" y="625" text-anchor="start" fill="#5c7cfa" font-size="10">⏹️ User stops → user_done signal</text>
+
+  <!-- Decision: Validate -->
+  <rect x="650" y="665" width="180" height="50" rx="8" fill="rgba(32,201,151,0.1)" stroke="#20c997" stroke-width="1"/>
+  <text x="740" y="683" text-anchor="middle" fill="#20c997" font-size="11" font-weight="600">Validate Response</text>
+  <text x="740" y="699" text-anchor="middle" fill="#adb5bd" font-size="9">compare_word_by_word()</text>
+
+  <!-- Branch: Correct -->
+  <rect x="65" y="740" width="230" height="50" rx="8" fill="rgba(32,201,151,0.12)" stroke="#20c997" stroke-width="1"/>
+  <text x="180" y="758" text-anchor="middle" fill="#20c997" font-size="11" font-weight="600">✅ All words correct</text>
+  <text x="180" y="774" text-anchor="middle" fill="#adb5bd" font-size="9">Score += word_count</text>
+
+  <!-- Branch: Partial -->
+  <rect x="325" y="740" width="230" height="50" rx="8" fill="rgba(255,146,43,0.12)" stroke="#ff922b" stroke-width="1"/>
+  <text x="440" y="758" text-anchor="middle" fill="#ff922b" font-size="11" font-weight="600">⚠️ Partial match</text>
+  <text x="440" y="774" text-anchor="middle" fill="#adb5bd" font-size="9">retries_remaining > 0 → Retry</text>
+
+  <!-- Branch: Wrong -->
+  <rect x="585" y="740" width="250" height="50" rx="8" fill="rgba(255,107,107,0.12)" stroke="#ff6b6b" stroke-width="1"/>
+  <text x="710" y="758" text-anchor="middle" fill="#ff6b6b" font-size="11" font-weight="600">❌ All retries exhausted</text>
+  <text x="710" y="774" text-anchor="middle" fill="#adb5bd" font-size="9">Set state → GAME_OVER</text>
+
+  <!-- Flow arrows from validate to branches -->
+  <line x1="740" y1="718" x2="180" y2="740" stroke="#20c997" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="740" y1="718" x2="440" y2="740" stroke="#ff922b" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="740" y1="718" x2="710" y2="740" stroke="#ff6b6b" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- Retry loop -->
+  <path d="M 440 790 Q 420 820 740 830" stroke="#ff922b" stroke-width="1.5" stroke-dasharray="6,3" fill="none" marker-end="url(#arrowRight)"/>
+  <text x="560" y="815" text-anchor="middle" fill="#ff922b" font-size="10">Re-announce words → LISTEN</text>
+
+  <!-- Correct → Next round -->
+  <path d="M 180 790 Q 200 820 420 830" stroke="#20c997" stroke-width="1.5" stroke-dasharray="6,3" fill="none"/>
+  <text x="300" y="815" text-anchor="middle" fill="#20c997" font-size="10">Advance round → SPEAK_SEQUENCE</text>
+
+  <!-- Game Over -->
+  <rect x="585" y="810" width="250" height="55" rx="8" fill="rgba(255,107,107,0.12)" stroke="#ff6b6b" stroke-width="1.5"/>
+  <text x="710" y="830" text-anchor="middle" fill="#ff6b6b" font-size="11" font-weight="600">Game Over</text>
+  <text x="710" y="846" text-anchor="middle" fill="#adb5bd" font-size="9">🔊 TTS: "Final score: X"</text>
+  <text x="710" y="858" text-anchor="middle" fill="#adb5bd" font-size="9">Push EndFrame → pipeline stops</text>
+
+  <!-- End session -->
+  <line x1="710" y1="870" x2="420" y2="870" stroke="#ff6b6b" stroke-width="1.5"/>
+  <text x="565" y="862" text-anchor="middle" fill="#ff6b6b" font-size="10">_end_session(): status=completed</text>
+
+  <!-- Frontend polls -->
+  <line x1="420" y1="890" x2="200" y2="890" stroke="#5c7cfa" stroke-width="1.5"/>
+  <text x="310" y="882" text-anchor="middle" fill="#5c7cfa" font-size="10">GET /sessions/{id} → status=completed</text>
+
+  <!-- Game Over Modal -->
+  <rect x="65" y="910" width="230" height="50" rx="8" fill="rgba(92,124,250,0.12)" stroke="#5c7cfa" stroke-width="1"/>
+  <text x="180" y="930" text-anchor="middle" fill="#5c7cfa" font-size="11" font-weight="600">Show Game Over Modal</text>
+  <text x="180" y="946" text-anchor="middle" fill="#adb5bd" font-size="9">Score, Rounds, Play Again</text>
+
+  <!-- Save to DB -->
+  <rect x="325" y="910" width="230" height="50" rx="8" fill="rgba(255,146,43,0.12)" stroke="#ff922b" stroke-width="1"/>
+  <text x="440" y="930" text-anchor="middle" fill="#ff922b" font-size="11" font-weight="600">Save Round to DB</text>
+  <text x="440" y="946" text-anchor="middle" fill="#adb5bd" font-size="9">word_sequence, user_response</text>
+
+  <!-- Leaderboard -->
+  <rect x="585" y="910" width="250" height="50" rx="8" fill="rgba(20,201,151,0.12)" stroke="#20c997" stroke-width="1"/>
+  <text x="710" y="930" text-anchor="middle" fill="#20c997" font-size="11" font-weight="600">Update Leaderboard</text>
+  <text x="710" y="946" text-anchor="middle" fill="#adb5bd" font-size="9">GET /leaderboard → top 3 scores</text>
+
+  <!-- Step 9: 🥇🥈🥉 -->
+  <text x="450" y="990" text-anchor="middle" fill="#6c757d" font-size="11">Leaderboard shows top 3 highest-scoring individual sessions</text>
+
+  <!-- Legend -->
+  <rect x="40" y="1020" width="820" height="60" rx="8" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+  <circle cx="80" cy="1045" r="5" fill="#5c7cfa"/>
+  <text x="95" y="1049" fill="#6c757d" font-size="10">Frontend → Backend</text>
+  <circle cx="240" cy="1045" r="5" fill="#ff922b"/>
+  <text x="255" y="1049" fill="#6c757d" font-size="10">Backend → Bot</text>
+  <circle cx="420" cy="1045" r="5" fill="#20c997"/>
+  <text x="435" y="1049" fill="#6c757d" font-size="10">Bot → Frontend (TTS)</text>
+  <circle cx="630" cy="1065" r="4" fill="rgba(255,255,255,0.3)"/>
+  <text x="645" y="1069" fill="#6c757d" font-size="10">Dashed = Async / Background</text>
+</svg>

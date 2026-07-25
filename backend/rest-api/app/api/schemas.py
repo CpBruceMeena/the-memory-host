@@ -51,13 +51,13 @@ class CreateSessionResponse(BaseModel):
 
 
 class LeaderboardEntry(BaseModel):
-    """A single entry in the leaderboard."""
+    """A single entry in the leaderboard — represents one session."""
 
     player_name: str = Field(..., description="Player's display name")
-    best_score: int = Field(..., description="Highest score achieved")
-    best_round: int = Field(..., description="Highest round reached")
-    games_played: int = Field(..., description="Total games played")
-    last_played: datetime = Field(..., description="Most recent game date")
+    score: int = Field(..., description="Session score")
+    current_round: int = Field(..., description="Round reached")
+    session_id: str = Field(..., description="Unique session identifier")
+    created_at: datetime = Field(..., description="Session creation timestamp")
 
 
 class LeaderboardResponse(BaseModel):

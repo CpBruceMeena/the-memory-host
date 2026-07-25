@@ -102,7 +102,6 @@ class MemoryGameProcessor(FrameProcessor):
 
         # Internal state tracking
         self._started: bool = False
-        self._interrupted: bool = False
         # Protects the initial welcome + round announcement phase from accidental
         # interruption. User speech during this window is silently ignored.
         self._announcing_phase: bool = False
@@ -218,6 +217,9 @@ class MemoryGameProcessor(FrameProcessor):
         # Announce the first round — each word is spoken individually
         # with 1-second pauses so the user can hear and process each
         # one before the next starts.
+        # Clear any stale transcripts from before the game started
+        self.game.user_transcript_buffer = []
+
         self.game.state = GameState.SPEAK_SEQUENCE
         await self._announce_round()
 
@@ -249,35 +251,30 @@ class MemoryGameProcessor(FrameProcessor):
     # ── Interruption Handling ─────────────────────────────────
 
     async def _on_user_started_speaking(self) -> None:
-        """Handle user interrupting or beginning to speak.
+        """Handle user beginning to speak.
 
-        If the bot is currently speaking (SPEAK_SEQUENCE or ROUND_PASS),
-        the user's speech is treated as an interruption. The bot
-        stops talking and transitions to LISTEN mode.
+        During bot speech phases (SPEAK_SEQUENCE, ROUND_PASS, or
+        _announcing_phase), user speech is silently ignored. The bot
+        finishes its current utterance and transitions to LISTEN
+        naturally via _announce_round / _on_round_pass / _on_retry.
 
-        During the _announcing_phase (initial welcome + word announcement),
-        user speech is silently ignored to prevent accidental interruption
-        from responding to the welcome message (e.g. saying "okay" or
-        clearing throat during the first few seconds).
+        This prevents the bot from being interrupted mid-word and
+        avoids overlapping audio where bot speech and user mic feed
+        mix together.
         """
-        if self._announcing_phase:
+        if self.game.state in (
+            GameState.SPEAK_SEQUENCE,
+            GameState.ROUND_PASS,
+        ) or self._announcing_phase:
             logger.debug(
-                "Ignoring speech during announcing phase (state=%s)",
+                "Ignoring speech during bot speech (state=%s, announcing=%s)",
                 self.game.state.value if self.game.state else "None",
+                self._announcing_phase,
             )
-            self.game.user_transcript_buffer = []
             return
 
-        if self.game.state in (GameState.SPEAK_SEQUENCE, GameState.ROUND_PASS):
-            # User interrupted bot mid-speech
-            self._interrupted = True
-            self.game.state = GameState.LISTEN
-            self.game.user_transcript_buffer = []
-
-            logger.info("User interrupted bot — transitioning to LISTEN")
-
-        elif self.game.state == GameState.LISTEN:
-            # User is already in listen mode, reset buffer for new utterance
+        if self.game.state == GameState.LISTEN:
+            # User is in listen mode, reset buffer for new utterance
             self.game.user_transcript_buffer = []
 
     async def _on_user_stopped_speaking(self) -> None:
@@ -289,10 +286,6 @@ class MemoryGameProcessor(FrameProcessor):
         if self.game.state == GameState.LISTEN and not self.game.is_validating:
             self.game.state = GameState.VALIDATE
             await self._validate_response()
-
-        elif self._interrupted and self.game.state == GameState.VALIDATE:
-            # User finished speaking after interruption
-            self._interrupted = False
 
     # ── Transcript Processing ──────────────────────────────────
 
@@ -309,48 +302,38 @@ class MemoryGameProcessor(FrameProcessor):
            trigger validation directly (push_frame works here).
         3. Timer fallback: 4-second silence window via background task.
         """
-        if self.game.state == GameState.LISTEN:
-            now = time.monotonic()
-            gap = now - self._last_transcript_time if self._last_transcript_time > 0 else 0
-            self._last_transcript_time = now
+        # Always accumulate transcripts, even during bot speech.
+        # If the user starts speaking while the bot is talking,
+        # we want to capture their speech so it's available when
+        # the bot finishes and transitions to LISTEN.
+        now = time.monotonic()
+        gap = now - self._last_transcript_time if self._last_transcript_time > 0 else 0
+        self._last_transcript_time = now
 
-            self.game.user_transcript_buffer.append(frame.text)
-            logger.info(
-                "Transcript collected: '%s' (buffer size: %d, gap: %.1fs)",
-                frame.text,
-                len(self.game.user_transcript_buffer),
-                gap,
-            )
+        self.game.user_transcript_buffer.append(frame.text)
+        logger.info(
+            "Transcript collected: '%s' (buffer size: %d, gap: %.1fs, state=%s)",
+            frame.text,
+            len(self.game.user_transcript_buffer),
+            gap,
+            self.game.state.value if self.game.state else "None",
+        )
 
-            # ── Layer 1: Push-to-talk signal ──────────────────────
-            # If the user released the hold-to-speak button, validate
-            # immediately with whatever transcripts we have.
-            if (
-                self.game.user_done_event
-                and self.game.user_done_event.is_set()
-            ):
-                self.game.user_done_event.clear()
-                if not self.game.is_validating and len(self.game.user_transcript_buffer) >= 1:
-                    logger.info(
-                        "User done signal — triggering validation with %d fragments",
-                        len(self.game.user_transcript_buffer),
-                    )
-                    await self._cancel_validate()
-                    self.game.state = GameState.VALIDATE
-                    await self._validate_response()
-                    return
+        # Only trigger validation if we're in LISTEN state
+        if self.game.state != GameState.LISTEN:
+            return
 
-            # ── Layer 2: Inline threshold ─────────────────────────
-            threshold = max(
-                MIN_TRANSCRIPT_THRESHOLD,
-                len(self.game.expected_sequence) + 2,
-            )
-            if (
-                len(self.game.user_transcript_buffer) >= threshold
-                and not self.game.is_validating
-            ):
+        # ── Layer 1: Push-to-talk signal ──────────────────────
+        # If the user released the hold-to-speak button, validate
+        # immediately with whatever transcripts we have.
+        if (
+            self.game.user_done_event
+            and self.game.user_done_event.is_set()
+        ):
+            self.game.user_done_event.clear()
+            if not self.game.is_validating and len(self.game.user_transcript_buffer) >= 1:
                 logger.info(
-                    "Transcript threshold reached (%d) — triggering validation",
+                    "User done signal — triggering validation with %d fragments",
                     len(self.game.user_transcript_buffer),
                 )
                 await self._cancel_validate()
@@ -358,18 +341,30 @@ class MemoryGameProcessor(FrameProcessor):
                 await self._validate_response()
                 return
 
-            # ── Layer 3: Timer fallback ───────────────────────────
-            # Reset the 4-second silence window on each new transcript
-            if not self.game.is_validating:
-                await self._cancel_validate()
-                self._validate_task = asyncio.create_task(
-                    self._timer_validate()
-                )
-        else:
-            logger.warning(
-                "Transcript received but not in LISTEN state (state=%s): '%s'",
-                self.game.state.value if self.game.state else "None",
-                frame.text,
+        # ── Layer 2: Inline threshold ─────────────────────────
+        threshold = max(
+            MIN_TRANSCRIPT_THRESHOLD,
+            len(self.game.expected_sequence) + 2,
+        )
+        if (
+            len(self.game.user_transcript_buffer) >= threshold
+            and not self.game.is_validating
+        ):
+            logger.info(
+                "Transcript threshold reached (%d) — triggering validation",
+                len(self.game.user_transcript_buffer),
+            )
+            await self._cancel_validate()
+            self.game.state = GameState.VALIDATE
+            await self._validate_response()
+            return
+
+        # ── Layer 3: Timer fallback ───────────────────────────
+        # Reset the 4-second silence window on each new transcript
+        if not self.game.is_validating:
+            await self._cancel_validate()
+            self._validate_task = asyncio.create_task(
+                self._timer_validate()
             )
 
     # ── Validation (Core Game Logic) ───────────────────────────
@@ -583,6 +578,10 @@ class MemoryGameProcessor(FrameProcessor):
         """
         self.game.state = GameState.SPEAK_SEQUENCE
 
+        # Clear transcript buffer so stale speech from the user's
+        # previous attempt doesn't carry into this retry.
+        self.game.user_transcript_buffer = []
+
         logger.info(
             "Round %d retry — %d/%d correct, %d retries remaining",
             self.game.current_round,
@@ -656,6 +655,11 @@ class MemoryGameProcessor(FrameProcessor):
         # End the session
         await self._end_session()
 
+        # Stop the pipeline cleanly — EndFrame is queued after the
+        # final TTS message, allowing it to finish naturally before
+        # the pipeline shuts down.
+        await self.push_frame(EndFrame())
+
     async def _on_game_won(self) -> None:
         """Handle game won — all rounds completed successfully."""
         self.game.state = GameState.GAME_OVER
@@ -681,6 +685,11 @@ class MemoryGameProcessor(FrameProcessor):
 
         # End the session
         await self._end_session()
+
+        # Stop the pipeline cleanly — EndFrame is queued after the
+        # final TTS message, allowing it to finish naturally before
+        # the pipeline shuts down.
+        await self.push_frame(EndFrame())
 
     # ── Helper Methods ─────────────────────────────────────────
 

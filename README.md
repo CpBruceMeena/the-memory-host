@@ -6,11 +6,13 @@ A **voice-based memory card game** powered by [Pipecat](https://github.com/pipec
 
 - 🎙️ **Voice-powered** — speak your answers using your microphone
 - 🤖 **Bot game host** — pre-written prompt templates (no LLM needed)
-- 📈 **10 progressive rounds** — from 3 words up to 12
-- 🏆 **Leaderboard** — tracks best scores across games
+- 📈 **10 progressive rounds** — from 1 word up to 10
+- 🏆 **Leaderboard** — top 3 highest-scoring individual sessions
 - ⚡ **Real-time WebRTC** — low-latency audio via SmallWebRTC
 - 🛡️ **Double-scoring prevention** — three-layer protection (in-memory, DB constraint, app-level check)
 - 🎨 **Dark mode UI** — glass morphism design with Tailwind CSS
+- 🔄 **Push-to-talk recording** — click-to-start/stop recording button with animated sound wave visualization
+- 🇬🇧 **British English voice** — using Deepgram's `aura-2-pandora-en` for natural speech
 
 ## Quick Start
 
@@ -32,41 +34,17 @@ cp .env.example .env
 # Edit .env and paste your DEEPGRAM_API_KEY
 ```
 
-### 2. Backend Setup
+### 2. Start Services
 
 ```bash
-cd backend
-
-# Create Python virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
 # Start PostgreSQL
-cd ..
 docker compose up -d postgres
 
-# Start the backend
-./run.sh backend
+# Start all services (rest-api + game-engine + frontend)
+./run.sh
 ```
 
-The backend starts at `http://localhost:8000`. API docs are at `http://localhost:8000/docs`.
-
-### 3. Frontend Setup
-
-In a new terminal:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The frontend starts at `http://localhost:3000`.
-
-### 4. Play!
+### 3. Play!
 
 Open `http://localhost:3000`, enter your name, and click **Start Game**.
 
@@ -75,40 +53,45 @@ Open `http://localhost:3000`, enter your name, and click **Start Game**.
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                    FRONTEND (Next.js 15)                     │
-│  ┌──────────┐  ┌────────────────┐  ┌──────────────────────┐ │
-│  │ Landing  │  │  Game Room     │  │ Leaderboard          │ │
-│  └────┬─────┘  └───────┬────────┘  └─────────┬────────────┘ │
-│       │                │                     │               │
-│       └────────┬───────┘                     │               │
-│                │                             │               │
-│         ┌──────▼──────┐                     │               │
-│         │  BFF Routes  │─────────────────────┘               │
-│         └──────┬──────┘                                      │
-└────────────────┼─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                     FRONTEND (Next.js 15)                        │
+│  Port 3000                                                      │
+│  ┌──────────┐  ┌────────────────┐  ┌────────────────────────┐   │
+│  │ Landing  │  │  Game Room     │  │ Leaderboard            │   │
+│  └────┬─────┘  └───────┬────────┘  └─────────┬──────────────┘   │
+│       │                │                     │                  │
+│       └────────┬───────┘                     │                  │
+│                │                             │                  │
+│         ┌──────▼──────┐                     │                  │
+│         │  BFF Routes  │─────────────────────┘                  │
+│         │  (/api/*)    │                                        │
+│         └──────┬──────┘                                         │
+└────────────────┼────────────────────────────────────────────────┘
                  │ HTTP/JSON
-    ┌────────────┼─────────────────────────────────┐
-    │            │                                 │
-    │   ┌────────▼────────┐    ┌──────────────────┐│
-    │   │  FastAPI Backend │    │ Signaling Server ││
-    │   │  (Python)        │    │ (WebSocket)      ││
-    │   │                  │    └────────┬─────────┘│
-    │   │  • Game Engine   │             │          │
-    │   │  • Voice Bot     │    SmallWebRTC P2P     │
-    │   │  • REST APIs     │    Audio Channel        │
-    │   └────────┬────────┘             │           │
-    │            │                      │           │
-    │   ┌────────▼────────┐             │           │
-    │   │  PostgreSQL     │             │           │
-    │   └─────────────────┘             │           │
-    │                                   ▼           │
-    │  ┌──────────────────────────────────────────┐ │
-    │  │        PIPECAT VOICE BOT                 │ │
-    │  │  WebRTC → Deepgram STT → GameProcessor  │ │
-    │  │           → Deepgram TTS → WebRTC        │ │
-    │  └──────────────────────────────────────────┘ │
-    └───────────────────────────────────────────────┘
+    ┌────────────┼────────────────────────────────────┐
+    │            │                                     │
+    │   ┌────────▼────────┐      ┌──────────────────┐  │
+    │   │  REST API        │      │  Game Engine     │  │
+    │   │  Port 8000       │      │  Port 3002       │  │
+    │   │  FastAPI         │◄────►│  FastAPI         │  │
+    │   │                  │      │                  │  │
+    │   │  • Sessions      │      │  • Signaling     │  │
+    │   │  • Leaderboard   │      │    Server (3001) │  │
+    │   │  • Health        │      │  • Voice Bot     │  │
+    │   └────────┬────────┘      │  • Game Engine   │  │
+    │            │               └──────────────────┘  │
+    │            │                        │            │
+    │   ┌────────▼────────┐               │            │
+    │   │  PostgreSQL     │     WebRTC P2P Audio       │
+    │   │  (the-memory-   │               │            │
+    │   │   host)         │               ▼            │
+    │   └─────────────────┘   ┌─────────────────────┐  │
+    │                         │   PIPECAT BOT       │  │
+    │                         │ WebRTC → STT →     │  │
+    │                         │ GameProcessor →    │  │
+    │                         │ TTS → WebRTC       │  │
+    │                         └─────────────────────┘  │
+    └───────────────────────────────────────────────────┘
 ```
 
 ### Project Structure
@@ -116,29 +99,43 @@ Open `http://localhost:3000`, enter your name, and click **Start Game**.
 ```
 the-memory-host/
 ├── backend/
-│   ├── app/                          # Main application package
-│   │   ├── api/                      # FastAPI layer
-│   │   │   ├── main.py               # App entrypoint
-│   │   │   ├── routes.py             # Session & leaderboard endpoints
-│   │   │   ├── deps.py               # Dependency injection
-│   │   │   └── schemas.py            # Pydantic request/response models
-│   │   ├── core/                     # Infrastructure
-│   │   │   ├── config.py             # Environment config (pydantic-settings)
-│   │   │   ├── cache.py              # In-memory TTLCache
-│   │   │   └── constants.py          # Application constants (word pool)
-│   │   ├── services/                 # Business logic
-│   │   │   ├── game_state.py         # State machine enum + dataclass
-│   │   │   ├── game_logic.py         # Sequence generation, validation
-│   │   │   ├── game_processor.py     # Pipecat FrameProcessor (game engine)
-│   │   │   ├── prompt_templates.py   # Categorized dialog templates
-│   │   │   └── bot.py                # Pipecat pipeline assembly
-│   │   ├── models/                   # SQLAlchemy ORM models
-│   │   │   ├── base.py               # Declarative Base + mixins
-│   │   │   ├── session.py            # Game session model
-│   │   │   └── round.py              # Round model
-│   │   └── db/
-│   │       └── database.py           # AsyncSession + engine setup
-│   ├── tests/                        # Unit tests
+│   ├── rest-api/                     # REST API service (port 8000)
+│   │   ├── app/
+│   │   │   ├── api/
+│   │   │   │   ├── main.py           # FastAPI entrypoint
+│   │   │   │   ├── routes.py         # Session & leaderboard endpoints
+│   │   │   │   ├── deps.py           # Dependency injection (DB session)
+│   │   │   │   └── schemas.py        # Pydantic request/response models
+│   │   │   ├── core/
+│   │   │   │   ├── config.py         # Environment config
+│   │   │   │   └── constants.py      # Application constants
+│   │   │   ├── models/
+│   │   │   │   ├── base.py           # SQLAlchemy Base + mixins
+│   │   │   │   ├── session.py        # Session model
+│   │   │   │   └── round.py          # Round model
+│   │   │   └── db/
+│   │   │       └── database.py       # AsyncSession + engine
+│   │   └── requirements.txt
+│   │
+│   ├── game-engine/                  # Game Engine service (port 3002)
+│   │   ├── app/
+│   │   │   ├── main.py               # FastAPI entrypoint + signaling (port 3001)
+│   │   │   ├── signaling/
+│   │   │   │   └── server.py         # WebSocket signaling server
+│   │   │   ├── services/
+│   │   │   │   ├── bot.py            # Pipecat pipeline assembly + CLI
+│   │   │   │   ├── game_processor.py # Pipecat FrameProcessor (game engine)
+│   │   │   │   ├── game_state.py     # State machine enum + GameData dataclass
+│   │   │   │   ├── game_logic.py     # Sequence generation, word-by-word comparison
+│   │   │   │   ├── prompt_templates.py  # Categorized dialog templates
+│   │   │   │   └── custom_tts.py     # Slower TTSService with speed control
+│   │   │   ├── models/               # Shared SQLAlchemy models
+│   │   │   ├── core/                 # Cache, config
+│   │   │   └── db/                   # Database session
+│   │   └── requirements.txt
+│   │
+│   ├── scripts/
+│   │   └── init_db.sql               # Database schema
 │   └── requirements.txt
 │
 ├── frontend/                         # Next.js 15 (App Router)
@@ -152,23 +149,26 @@ the-memory-host/
 │   │   └── api/                      # BFF API routes
 │   ├── components/
 │   │   ├── GameHeader.tsx            # Score + round + status
-│   │   ├── WebRTCRoom.tsx            # WebRTC audio (SSR-safe)
+│   │   ├── WebRTCRoom.tsx            # WebRTC audio + recording controls
 │   │   ├── GameLog.tsx               # Round history
+│   │   ├── RoundHistory.tsx          # Polling round history fetcher
 │   │   ├── GameOverModal.tsx         # End-game stats + replay
-│   │   ├── LeaderboardTable.tsx      # Ranked scores
+│   │   ├── LeaderboardTable.tsx      # Top 3 ranked sessions
 │   │   ├── PlayerNameForm.tsx        # Name input form
 │   │   └── LoadingSkeleton.tsx       # Loading states
 │   ├── hooks/
-│   │   ├── useGameState.ts           # 2s polling hook
+│   │   ├── useGameState.ts           # Polling hook (2s interval)
 │   │   └── useLeaderboard.ts         # Fetch + auto-refresh
 │   └── lib/
 │       └── api.ts                    # API client (server-side)
 │
+├── docs/
+│   └── sequence-diagram.svg          # Game flow sequence diagram
 ├── scripts/
-│   └── init_db.sql                   # Database schema (PostgreSQL)
-├── docker-compose.yml                # PostgreSQL only (backend runs via venv)
-├── run.sh                            # Start db / backend / frontend
-├── .env.example                      # Environment template
+│   └── init_db.sql
+├── docker-compose.yml                # PostgreSQL only
+├── run.sh                            # Start all services
+├── .env.example
 └── pyproject.toml
 ```
 
@@ -176,38 +176,80 @@ the-memory-host/
 
 ## Game Flow
 
+### State Machine
+
 ```
 IDLE → START_GAME → SPEAK_SEQUENCE → LISTEN → VALIDATE
-                    ↑                           │
-                    │                   ┌───────┴───────┐
-                    │              CORRECT         INCORRECT
-                    │                   │               │
-                    └─── ROUND_PASS ←──┘         GAME_OVER → ENDED
+                    ↑                            │
+                    │                    ┌───────┴──────────┐
+                    │              PERFECT             PARTIAL
+                    │                   │                   │
+                    └─── ROUND_PASS ◄───┘         RETRY ◄───┘
+                                                      │
+                                              GAME_OVER → ENDED
 ```
+
+### Round Progression
 
 | Round | Words | Difficulty |
 |-------|-------|-----------|
-| 1 | 3 | Easy |
-| 2 | 4 | Easy |
-| 3 | 5 | Medium |
-| 4 | 6 | Medium |
-| 5 | 7 | Hard |
-| ... | ... | ... |
-| 10 | 12 | Grandmaster |
+| 1 | 1 | Beginner |
+| 2 | 2 | Beginner |
+| 3 | 3 | Easy |
+| 4 | 4 | Easy |
+| 5 | 5 | Medium |
+| 6 | 6 | Medium |
+| 7 | 7 | Hard |
+| 8 | 8 | Hard |
+| 9 | 9 | Expert |
+| 10 | 10 | Grandmaster |
 
-The bot speaks a sequence, you repeat it back. Correct? +1 word added. Wrong? Game over with your score.
+**Max rounds:** 10 (configurable via `MAX_ROUNDS`)
+**Retries per round:** 3 (configurable via `max_retries_per_round`)
+**Scoring:** Word-by-word match — each correctly remembered word awards 1 point
+**Word pool:** 100+ common words (animals, fruits, objects, nature)
+
+### Game Loop
+
+1. **Bot speaks** each word individually with 1-second pauses (`"Word 1: apple. Word 2: banana."`)
+2. **User taps Start Recording**, speaks the words back
+3. **User taps Stop Recording**, signal is sent to bot for validation
+4. **Bot compares** user's words vs expected (word-by-word, partial scoring)
+5. **If perfect** → move to next round with +1 word added
+6. **If partial with retries left** → re-announce words, user tries again (up to 3 retries)
+7. **If no retries left** → Game Over, pipeline stops, session saved to DB
 
 ---
 
 ## API Endpoints
+
+### REST API (Port 8000)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/sessions` | Create a new game session |
 | `GET` | `/api/sessions/{id}` | Get game state (score, round, status) |
 | `POST` | `/api/sessions/{id}/end` | End a session manually |
-| `GET` | `/api/leaderboard` | Top player scores |
+| `GET` | `/api/sessions/{id}/rounds` | Get round history for a session |
+| `GET` | `/api/leaderboard` | Top 3 highest-scoring individual sessions |
 | `GET` | `/api/health` | Health check |
+
+### Game Engine (Port 3002)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/start-session` | Start a Pipecat voice bot for a session |
+| `GET` | `/health` | Health check |
+
+### Signaling (Port 3001 — WebSocket)
+
+| Message Type | Direction | Description |
+|-------------|-----------|-------------|
+| `join` | Client → Server | Register as peer (bot or receiver) |
+| `offer` | Client → Bot | SDP offer from receiving client |
+| `answer` | Bot → Client | SDP answer from bot |
+| `ice-candidate` | Bidirectional | ICE candidate relay |
+| `user_done` | Client → Bot | Push-to-talk released signal |
 
 ---
 
@@ -215,21 +257,19 @@ The bot speaks a sequence, you repeat it back. Correct? +1 word added. Wrong? Ga
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DEEPGRAM_API_KEY` | ✅ | — | Deepgram API key for STT (Nova-2) & TTS (Aura) |
+| `DEEPGRAM_API_KEY` | ✅ | — | Deepgram API key for STT (Nova-2) & TTS (Aura 2) |
 | `DATABASE_URL` | ✅ | `postgresql+asyncpg://postgres:password@localhost:5432/the-memory-host` | PostgreSQL connection |
 | `SMALLWEBRTC_SERVER_URL` | ❌ | `http://localhost:3001` | WebRTC signaling server |
 | `BOT_NAME` | ❌ | `Memory Game Host` | Bot display name |
 | `MAX_ROUNDS` | ❌ | `10` | Maximum game rounds |
 | `LOG_LEVEL` | ❌ | `INFO` | Logging level |
-| `NEXT_PUBLIC_BACKEND_URL` | ❌ | `http://localhost:8000` | Backend URL (frontend) |
+| `GAME_ENGINE_URL` | ❌ | `http://localhost:3002` | Game engine URL (REST API → Game Engine) |
 
 ---
 
 ## Configuration Reference
 
-The `backend/app/core/config.py` exposes all configuration via `pydantic-settings`. All values can be set via environment variables or a `.env` file at the project root.
-
-### Cache Settings
+### Cache Settings (`backend/rest-api/app/core/config.py`)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -238,41 +278,25 @@ The `backend/app/core/config.py` exposes all configuration via `pydantic-setting
 | `CACHE_LEADERBOARD_TTL` | `60` | Leaderboard cache TTL (1 min) |
 | `CACHE_ROUND_TTL` | `1800` | Round state cache TTL (30 min) |
 
+### TTS Voice (`backend/game-engine/app/services/bot.py`)
+
+Currently using **`aura-2-pandora-en`** (British English, feminine) — the closest available accent to Indian English in Deepgram's Aura 2 lineup. Speed is set to **0.9** (10% slower).
+
 ---
 
-## Running Tests
+## Running the Project
 
 ```bash
-cd backend
-source .venv/bin/activate
+# Start all services (REST API + Game Engine + Frontend)
+./run.sh
 
-# Run all tests
-pytest
-
-# Run specific test file (once written — see TASK_LIST.md)
-pytest tests/test_game_logic.py -v
+# Start individual services
+./run.sh rest-api       # Port 8000
+./run.sh game-engine    # Port 3002 (signaling on 3001)
+./run.sh frontend       # Port 3000
 ```
 
-> **Note:** Unit tests are planned in Phase 5 of the development roadmap. See `TASK_LIST.md` for details.
-
----
-
-## Deployment
-
-### Production WebRTC (Daily.co)
-
-For production, swap the WebRTC transport from `SmallWebRTCTransport` to `DailyTransport`:
-
-```python
-# backend/app/services/bot.py
-from pipecat.transports.daily import DailyTransport
-
-transport = DailyTransport(
-    room_url=daily_room_url,
-    token=daily_token,
-    bot_name="Memory Game Host",
-)
-```
+Logs are written to both stdout and `app.log` at the project root.
 
 ---
 
@@ -282,8 +306,9 @@ transport = DailyTransport(
 |-----------|-----------|
 | Voice Pipeline | [Pipecat](https://github.com/pipecat-ai/pipecat) |
 | WebRTC | SmallWebRTC (built into Pipecat) |
-| STT / TTS | [Deepgram](https://deepgram.com) Nova-2 / Aura |
-| Backend API | [FastAPI](https://fastapi.tiangolo.com/) (Python) |
+| STT | [Deepgram](https://deepgram.com) Nova-2 |
+| TTS | [Deepgram](https://deepgram.com) Aura 2 (`aura-2-pandora-en`) |
+| REST API | [FastAPI](https://fastapi.tiangolo.com/) (Python) |
 | Database | [PostgreSQL](https://www.postgresql.org/) 16 |
 | ORM | [SQLAlchemy](https://www.sqlalchemy.org/) 2.0 (async) |
 | Frontend | [Next.js](https://nextjs.org/) 15 (App Router) |

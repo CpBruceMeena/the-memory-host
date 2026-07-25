@@ -20,6 +20,7 @@ import argparse
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 import uuid
 from typing import Any, Optional
 
@@ -393,13 +394,44 @@ async def create_and_run_bot(
                 await db_session.rollback()
                 logger.exception("Failed to commit session data")
 
-            # Update session status to interrupted if still active
+            # If the session still has an active status but has a score,
+            # mark it as completed so the leaderboard includes it.
+            # This handles cases where the pipeline stops (error, disconnect)
+            # after _update_db_session() saved the score but before
+            # _end_session() could mark it as completed.
             if game_data.is_active:
                 logger.info(
-                    "Session %s ended with status: %s",
+                    "Session %s ended with status: %s (score=%d) — "
+                    "checking if finalization is needed",
                     session_id,
                     game_data.state.value,
+                    game_data.score,
                 )
+                if game_data.score > 0:
+                    try:
+                        from sqlalchemy import select
+                        from app.models.session import Session
+
+                        result = await db_session.execute(
+                            select(Session).where(Session.id == uuid.UUID(session_id))
+                        )
+                        db_sess = result.scalar_one_or_none()
+                        if db_sess and db_sess.status == "active":
+                            db_sess.status = "completed"
+                            db_sess.score = game_data.score
+                            db_sess.current_round = game_data.current_round
+                            db_sess.ended_at = datetime.now(timezone.utc)
+                            await db_session.commit()
+                            logger.info(
+                                "Finalized session %s with score=%d",
+                                session_id,
+                                game_data.score,
+                            )
+                    except Exception:
+                        await db_session.rollback()
+                        logger.exception(
+                            "Failed to finalize session %s", session_id
+                        )
 
 
 # ── CLI Entrypoint ──────────────────────────────────────────

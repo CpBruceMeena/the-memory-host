@@ -108,15 +108,15 @@ export function LeaderboardTable({
                 {entry.player_name}
               </p>
               <p className="text-xs text-gray-500">
-                {entry.games_played} game{entry.games_played !== 1 ? "s" : ""} played
+                {new Date(entry.created_at).toLocaleDateString()}
               </p>
             </div>
 
             {/* Score */}
             <div className="text-right flex-shrink-0">
-              <p className="text-sm font-bold text-white">{entry.best_score}</p>
+              <p className="text-sm font-bold text-white">{entry.score}</p>
               <p className="text-xs text-gray-500">
-                Round {entry.best_round}
+                Round {entry.current_round}
               </p>
             </div>
           </div>

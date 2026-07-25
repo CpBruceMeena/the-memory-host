@@ -7,6 +7,14 @@ interface WebRTCRoomProps {
   roomUrl: string;
   /** Room access token. */
   token: string;
+  /**
+   * Called once when the bot finishes speaking its final turn.
+   * The RTVI bot-stopped-speaking event fires through the WebRTC
+   * data channel after Pipecat's TTS has finished generating and
+   * playing all audio. Used by the parent to show the Game Over
+   * modal at the right time (after the bot says the final message).
+   */
+  onBotFinishedSpeaking?: () => void;
 }
 
 /**
@@ -19,7 +27,7 @@ interface WebRTCRoomProps {
  *
  * For production, replace with the Daily.co client (@daily-co/daily-js).
  */
-export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
+export function WebRTCRoom({ roomUrl, token, onBotFinishedSpeaking }: WebRTCRoomProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -100,7 +108,22 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
         const dc = pc.createDataChannel("game");
 
         dc.onopen = () => console.log("Client data channel opened");
-        dc.onmessage = (event) => console.log("Client data channel message:", event.data);
+        dc.onmessage = (event) => {
+          console.log("Client data channel message:", event.data);
+          try {
+            const data = JSON.parse(event.data);
+            // Pipecat sends RTVI bot-stopped-speaking through the data
+            // channel when its TTS finishes playing all audio. This is
+            // the signal that the bot has finished speaking the game
+            // over message and it's safe to show the Game Over modal.
+            if (data?.type === "bot-stopped-speaking") {
+              console.log("Bot finished speaking — firing onBotFinishedSpeaking");
+              onBotFinishedSpeaking?.();
+            }
+          } catch {
+            // Non-JSON message — ignore
+          }
+        };
 
         // Listen for the bot's data channel (created by SmallWebRTCTransport
         // on the bot side). The bot sends game state updates (round info,
@@ -113,6 +136,11 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
             try {
               const data = JSON.parse(msgEvent.data);
               console.log("Bot app message:", data);
+              // Also check bot-stopped-speaking on the bot's channel
+              if (data?.type === "bot-stopped-speaking") {
+                console.log("Bot finished speaking (bot channel) — firing onBotFinishedSpeaking");
+                onBotFinishedSpeaking?.();
+              }
             } catch {
               console.log("Bot data channel message:", msgEvent.data);
             }
@@ -298,14 +326,12 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
         <div className="px-4 py-3 rounded-xl bg-red-900/20 border border-red-800/30 text-sm text-red-400">
           {errorMsg}
         </div>
-      )}
-
-      {status === "connected" && (
+      )}          {status === "connected" && (
         <div className="text-center">
           {/* Start / Stop Recording Button */}
           <button
             onClick={handleToggleRecording}
-            className={`w-full py-5 rounded-2xl font-bold text-lg transition-all duration-150 select-none
+            className={`w-full relative overflow-hidden rounded-2xl font-bold text-lg transition-all duration-150 select-none
               ${
                 isRecording
                   ? "bg-red-600/80 text-white scale-[0.98] shadow-lg shadow-red-600/20"
@@ -314,12 +340,27 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
             `}
           >
             {isRecording ? (
-              <span className="flex items-center justify-center gap-3">
-                <span className="w-3 h-3 rounded-full bg-white animate-pulse" />
-                Recording — tap Stop when done
+              <span className="flex flex-col items-center gap-3 py-2">
+                {/* Animated sound wave bars */}
+                <span className="flex items-end justify-center gap-[3px] h-8">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
+                    <span
+                      key={i}
+                      className="w-[3px] bg-white/90 rounded-full wave-bar"
+                      style={{
+                        animationDelay: `${i * 0.08}s`,
+                        height: "100%",
+                      }}
+                    />
+                  ))}
+                </span>
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+                  Recording — tap Stop when done
+                </span>
               </span>
             ) : (
-              <span className="flex items-center justify-center gap-3">
+              <span className="flex items-center justify-center gap-3 py-5">
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="12" r="6" />
                 </svg>

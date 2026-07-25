@@ -71,9 +71,10 @@ class GameData:
     # validation without waiting for VAD or transcript threshold.
     user_done_event: Any = field(default_factory=asyncio.Event)
 
-    # Retry tracking: how many attempts left for the current round
-    retries_remaining: int = 3
-    max_retries_per_round: int = 3
+    # Retry tracking: how many attempts left for the current round.
+    # max_retries_per_round = 2 means 3 total chances: 1 initial + 2 retries.
+    retries_remaining: int = 2
+    max_retries_per_round: int = 2
 
     # Best retry result for the current round (saved to DB when game over)
     best_retry_words: list[str] = field(default_factory=list)
