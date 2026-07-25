@@ -28,9 +28,9 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
     "connecting" | "connected" | "error" | "disconnected"
   >("connecting");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isPTTActive, setIsPTTActive] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
 
-  // Enable/disable microphone tracks for push-to-talk
+  // Enable/disable microphone tracks
   const setMicEnabled = (enabled: boolean) => {
     for (const track of userTracksRef.current) {
       track.enabled = enabled;
@@ -45,18 +45,20 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
     }
   };
 
-  // Push-to-talk handlers
-  const handlePTTStart = () => {
+  // Toggle recording on/off
+  const handleToggleRecording = () => {
     if (status !== "connected") return;
-    setIsPTTActive(true);
-    setMicEnabled(true);
-  };
 
-  const handlePTTEnd = () => {
-    if (!isPTTActive) return;
-    setIsPTTActive(false);
-    setMicEnabled(false);
-    sendUserDone();
+    if (isRecording) {
+      // Stop recording
+      setIsRecording(false);
+      setMicEnabled(false);
+      sendUserDone();
+    } else {
+      // Start recording
+      setIsRecording(true);
+      setMicEnabled(true);
+    }
   };
 
   useEffect(() => {
@@ -300,36 +302,28 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
 
       {status === "connected" && (
         <div className="text-center">
-          {/* Push-to-Talk Button */}
+          {/* Start / Stop Recording Button */}
           <button
-            onMouseDown={handlePTTStart}
-            onMouseUp={handlePTTEnd}
-            onMouseLeave={handlePTTEnd}
-            onTouchStart={(e) => { e.preventDefault(); handlePTTStart(); }}
-            onTouchEnd={(e) => { e.preventDefault(); handlePTTEnd(); }}
+            onClick={handleToggleRecording}
             className={`w-full py-5 rounded-2xl font-bold text-lg transition-all duration-150 select-none
               ${
-                isPTTActive
+                isRecording
                   ? "bg-red-600/80 text-white scale-[0.98] shadow-lg shadow-red-600/20"
                   : "bg-white/10 text-gray-300 hover:bg-white/15 active:scale-[0.98] border border-gray-700"
               }
             `}
-            style={{ touchAction: "manipulation" }}
           >
-            {isPTTActive ? (
+            {isRecording ? (
               <span className="flex items-center justify-center gap-3">
                 <span className="w-3 h-3 rounded-full bg-white animate-pulse" />
-                Recording — release when done
+                Recording — tap Stop when done
               </span>
             ) : (
               <span className="flex items-center justify-center gap-3">
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="23" />
-                  <line x1="8" y1="23" x2="16" y2="23" />
+                  <circle cx="12" cy="12" r="6" />
                 </svg>
-                Hold to Speak
+                Start Recording
               </span>
             )}
           </button>
@@ -342,8 +336,8 @@ export function WebRTCRoom({ roomUrl, token }: WebRTCRoomProps) {
           </div>
 
           <p className="text-xs text-gray-500">
-            Hold the button while speaking, release when done.
-            The bot will validate your answer after you release.
+            Tap "Start Recording" to speak, then tap "Stop" when you are done.
+            The bot will validate your answer after you stop.
           </p>
         </div>
       )}

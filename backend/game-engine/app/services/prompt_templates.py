@@ -92,20 +92,20 @@ class PromptTemplateSelector:
                 "Better luck next time.",
             ],
             # ── Retry / Partial Score ──────────────────────────────
-            # Used when user gets some words correct but not all
+            # Used when user gets some words correct but not all.
+            # The {numbered_sequence} is replaced by individual word
+            # announcements with pauses via _say_words_with_pauses().
+            # No "repeat them back" instruction — the user has already
+            # spoken their attempt, so we just re-announce the words.
             "retry": [
                 "Good try! You got {correct_count} out of {total} correct. "
-                "Let's try the same words again. {numbered_sequence}. "
-                "Repeat them back to me when you're ready.",
+                "Let's try the same words again. {numbered_sequence}.",
                 "Almost there! {correct_count} out of {total} correct. "
-                "I'll say the words once more. {numbered_sequence}. "
-                "Go ahead.",
+                "I'll say the words once more. {numbered_sequence}.",
                 "Not bad! You remembered {correct_count} of {total} words. "
-                "Here they are again. {numbered_sequence}. "
-                "Take your time and repeat them back.",
+                "Here they are again. {numbered_sequence}.",
                 "Getting warmer! {correct_count} of {total} words correct. "
-                "Let's try this round one more time. {numbered_sequence}. "
-                "Say them back when you're ready.",
+                "Let's try this round one more time. {numbered_sequence}.",
             ],
             # ── Game Over / Win ────────────────────────────────────
             "game_over": [
